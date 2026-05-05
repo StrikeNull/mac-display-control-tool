@@ -1,0 +1,205 @@
+diff --git a/src/DisplayPlacer.c b/src/DisplayPlacer.c
+index f06a3a5..3a31314 100644
+--- a/src/DisplayPlacer.c
++++ b/src/DisplayPlacer.c
+@@ -461,16 +461,18 @@ CGDirectDisplayID convertSerialToID(char* serialIdString) {
+ }
+ 
+ bool validateScreenOnline(CGDirectDisplayID onlineDisplayList[], CGDisplayCount screenCount, CGDirectDisplayID screenId, char* screenUUID, bool quietMissingScreen) {
+-    for (int i = 0; i < screenCount; i++) {
+-        if (onlineDisplayList[i] == screenId) {
+-            return true;
+-        }
+-    }
+-
+-    if (!quietMissingScreen) {
+-        fprintf(stderr, "Unable to find screen %s - skipping changes for that screen\n", screenUUID); //TODO only print once per screen
+-    }
+-    return false;
++    // for (int i = 0; i < screenCount; i++) {
++    //     if (onlineDisplayList[i] == screenId) {
++    //         return true;
++    //     }
++    // }
++
++    // if (!quietMissingScreen) {
++    //     fprintf(stderr, "Unable to find screen %s - skipping changes for that screen\n", screenUUID); //TODO only print once per screen
++    // }
++    // return false;
++    
++    return true;
+ }
+ 
+ bool isScreenEnabled(CGDirectDisplayID screenId) {
+@@ -685,61 +687,63 @@ bool setResolutions(ScreenConfig* screenConfigs, int argc, CGDisplayConfigRef co
+ }
+ 
+ bool setResolution(CGDisplayConfigRef configRef, CGDirectDisplayID screenId, char* screenUUID, int width, int height, int hz, int depth, bool scaled, int modeNum) {
+-    int modeCount;
+-    modes_D4* modes;
+-
+-    if (modeNum != -1) { //user specified modeNum instead of height/width/hz
+-        CGSConfigureDisplayMode(configRef, screenId, modeNum);
+-        return true;
+-    }
+-
+-    CopyAllDisplayModes(screenId, &modes, &modeCount);
+-
+-    modes_D4 bestMode = modes[0];
+-    bool modeFound = false;
+-
+-    //loop through all modes looking for one that matches user input params
+-    for (int i = 0; i < modeCount; i++) {
+-        modes_D4 curMode = modes[i];
+-
+-        //prioritize exact matches of user input params
+-        if (curMode.derived.width != width) continue;
+-        if (curMode.derived.height != height) continue;
+-        if (hz && curMode.derived.freq != hz) continue;
+-        if (depth && curMode.derived.depth != depth) continue;
+-        if (scaled && curMode.derived.density != 2.0) continue;
+-        if (!scaled && curMode.derived.density == 2.0) continue;
+-
+-        if (!modeFound) {
+-            modeFound = true;
+-            bestMode = curMode;
+-        }
+-
+-        if (curMode.derived.freq > bestMode.derived.freq || (curMode.derived.freq == bestMode.derived.freq && curMode.derived.depth > bestMode.derived.depth)) {
+-            bestMode = curMode;
+-        }
+-    }
+-
+-    if (modeFound) {
+-        CGSConfigureDisplayMode(configRef, screenId, bestMode.derived.mode);
+-        free(modes);
+-        return true;
+-    }
+-
+-    fprintf(stderr, "Screen ID %s: could not find res:%ix%i", screenUUID, width, height);
+-    if (hz) {
+-        fprintf(stderr, " hz:%i", hz);
+-    }
+-    if (depth) {
+-        fprintf(stderr, " color_depth:%i", depth);
+-    }
+-    char* scalingString = (scaled) ? "on" : "off";
+-    fprintf(stderr, " scaling:%s", scalingString);
+-
+-    fprintf(stderr, "\n");
+-
+-    free(modes);
+-    return false;
++    // int modeCount;
++    // modes_D4* modes;
++
++    // if (modeNum != -1) { //user specified modeNum instead of height/width/hz
++    //     CGSConfigureDisplayMode(configRef, screenId, modeNum);
++    //     return true;
++    // }
++
++    // CopyAllDisplayModes(screenId, &modes, &modeCount);
++
++    // modes_D4 bestMode = modes[0];
++    // bool modeFound = false;
++
++    // //loop through all modes looking for one that matches user input params
++    // for (int i = 0; i < modeCount; i++) {
++    //     modes_D4 curMode = modes[i];
++
++    //     //prioritize exact matches of user input params
++    //     if (curMode.derived.width != width) continue;
++    //     if (curMode.derived.height != height) continue;
++    //     if (hz && curMode.derived.freq != hz) continue;
++    //     if (depth && curMode.derived.depth != depth) continue;
++    //     if (scaled && curMode.derived.density != 2.0) continue;
++    //     if (!scaled && curMode.derived.density == 2.0) continue;
++
++    //     if (!modeFound) {
++    //         modeFound = true;
++    //         bestMode = curMode;
++    //     }
++
++    //     if (curMode.derived.freq > bestMode.derived.freq || (curMode.derived.freq == bestMode.derived.freq && curMode.derived.depth > bestMode.derived.depth)) {
++    //         bestMode = curMode;
++    //     }
++    // }
++
++    // if (modeFound) {
++    //     CGSConfigureDisplayMode(configRef, screenId, bestMode.derived.mode);
++    //     free(modes);
++    //     return true;
++    // }
++
++    // fprintf(stderr, "Screen ID %s: could not find res:%ix%i", screenUUID, width, height);
++    // if (hz) {
++    //     fprintf(stderr, " hz:%i", hz);
++    // }
++    // if (depth) {
++    //     fprintf(stderr, " color_depth:%i", depth);
++    // }
++    // char* scalingString = (scaled) ? "on" : "off";
++    // fprintf(stderr, " scaling:%s", scalingString);
++
++    // fprintf(stderr, "\n");
++
++    // free(modes);
++    // return false;
++    
++    return true;
+ }
+ 
+ bool setPositions(ScreenConfig* screenConfigs, int argc, CGDisplayConfigRef configRef, CGDirectDisplayID screenList[], CGDisplayCount screenCount) {
+diff --git a/src/MonitorPanel.m b/src/MonitorPanel.m
+index e7970fe..d454759 100644
+--- a/src/MonitorPanel.m
++++ b/src/MonitorPanel.m
+@@ -3,29 +3,29 @@
+ bool setRotation(CGDirectDisplayID screenId, char* screenUUID, int degree) {
+     bool isSuccess = true;
+ 
+-    MPDisplay* mpDisplay = [[MPDisplay alloc] initWithCGSDisplayID:screenId];
+-    [mpDisplay setOrientation: degree];
++    // MPDisplay* mpDisplay = [[MPDisplay alloc] initWithCGSDisplayID:screenId];
++    // [mpDisplay setOrientation: degree];
+ 
+-    // block until non-blocking rotation change completes
+-    int waitSeconds = 10;
+-    unsigned long beginTime = time(NULL);
+-    unsigned long secondsElapsed = 0;
+-    while (CGDisplayRotation(screenId) != degree ) {
+-        unsigned long curSecondsElapsed = time(NULL) - beginTime;
++    // // block until non-blocking rotation change completes
++    // int waitSeconds = 10;
++    // unsigned long beginTime = time(NULL);
++    // unsigned long secondsElapsed = 0;
++    // while (CGDisplayRotation(screenId) != degree ) {
++    //     unsigned long curSecondsElapsed = time(NULL) - beginTime;
+ 
+-        if (curSecondsElapsed > secondsElapsed) {
+-            printf("Waited %lu of %i seconds for screen %s to complete rotating\n", curSecondsElapsed, waitSeconds, screenUUID);
+-        }
++    //     if (curSecondsElapsed > secondsElapsed) {
++    //         printf("Waited %lu of %i seconds for screen %s to complete rotating\n", curSecondsElapsed, waitSeconds, screenUUID);
++    //     }
+ 
+-        if (curSecondsElapsed >= waitSeconds) {
+-            fprintf(stderr, "Unable to confirm if screen %s successfully rotated to degree:%i\n", screenUUID, degree);
+-            isSuccess = false;
+-            break;
+-        }
++    //     if (curSecondsElapsed >= waitSeconds) {
++    //         fprintf(stderr, "Unable to confirm if screen %s successfully rotated to degree:%i\n", screenUUID, degree);
++    //         isSuccess = false;
++    //         break;
++    //     }
+ 
+-        secondsElapsed = curSecondsElapsed;
+-    }
++    //     secondsElapsed = curSecondsElapsed;
++    // }
+ 
+-    [mpDisplay release];
++    // [mpDisplay release];
+     return isSuccess;
+ }

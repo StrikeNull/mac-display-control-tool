@@ -1,0 +1,12 @@
+.DS_Store
+**/.DS_Store
+
+# Build artifacts
+statusbar-tool/build/
+
+# Local editor and OS metadata
+.idea/
+.vscode/
+*.swp
+*.swo
+
