@@ -1293,9 +1293,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if let selectedIndex,
            options.indices.contains(selectedIndex) {
             popUp.selectItem(at: selectedIndex)
+            popUp.synchronizeTitleAndSelectedItem()
+            popUp.title = options[selectedIndex].0
         } else if let selectedTitle,
            let index = options.firstIndex(where: { $0.0 == selectedTitle }) {
             popUp.selectItem(at: index)
+            popUp.synchronizeTitleAndSelectedItem()
+            popUp.title = options[index].0
         }
 
         return popUp
