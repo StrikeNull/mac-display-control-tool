@@ -512,6 +512,10 @@ final class ColorProfileController {
     }
 
     private static func profileName(path: String) -> String {
+        if let displayName = displayProfileName(path: path) {
+            return displayName
+        }
+
         let url = URL(fileURLWithPath: path)
         var unmanagedError: Unmanaged<CFError>?
         guard let unmanagedProfile = ColorSyncProfileCreateWithURL(url as CFURL, &unmanagedError),
@@ -521,6 +525,35 @@ final class ColorProfileController {
         }
         let description = unmanagedDescription.takeRetainedValue()
         return description as String
+    }
+
+    private static func displayProfileName(path: String) -> String? {
+        let normalizedPath = (path as NSString).standardizingPath
+        guard normalizedPath.contains("/ColorSync/Profiles/Displays/") else {
+            return nil
+        }
+
+        let baseName = URL(fileURLWithPath: normalizedPath).deletingPathExtension().lastPathComponent
+        let uuidLength = 36
+        guard baseName.count > uuidLength + 1 else {
+            return baseName.isEmpty ? nil : baseName
+        }
+
+        let uuidStart = baseName.index(baseName.endIndex, offsetBy: -uuidLength)
+        let separator = baseName.index(before: uuidStart)
+        guard baseName[separator] == "-" else {
+            return baseName
+        }
+
+        let uuid = String(baseName[uuidStart...])
+        let groupLengths = uuid.split(separator: "-", omittingEmptySubsequences: false).map(\.count)
+        guard groupLengths == [8, 4, 4, 4, 12],
+              uuid.allSatisfy({ $0 == "-" || $0.isHexDigit }) else {
+            return baseName
+        }
+
+        let displayName = String(baseName[..<separator])
+        return displayName.isEmpty ? baseName : displayName
     }
 
     private static func isDisplayICCProfile(path: String) -> Bool {
