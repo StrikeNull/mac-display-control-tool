@@ -632,7 +632,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         NSApp.setActivationPolicy(.accessory)
         projectRoot = Self.findProjectRoot()
         displayPlacer = DisplayPlacer(executable: displayplacerPath)
-        colorProfiles = ColorProfileController(helperPath: projectRoot.appendingPathComponent("statusbar-tool/build/profilectl").path)
+        colorProfiles = ColorProfileController(helperPath: Self.bundledResource("profilectl")?.path ?? projectRoot.appendingPathComponent("statusbar-tool/build/profilectl").path)
 
         statusItem.button?.title = "▣"
         statusItem.button?.toolTip = "Display Bar"
@@ -2198,7 +2198,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private var patchedPath: URL {
-        projectRoot.appendingPathComponent("bin/displayplacer-patched")
+        Self.bundledResource("displayplacer-patched") ?? projectRoot.appendingPathComponent("bin/displayplacer-patched")
     }
 
     private func mergedDisplays() -> [DisplayInfo] {
@@ -2277,6 +2277,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    }
+
+    private static func bundledResource(_ name: String) -> URL? {
+        guard let resourceURL = Bundle.main.resourceURL else {
+            return nil
+        }
+        let url = resourceURL.appendingPathComponent(name)
+        return FileManager.default.isExecutableFile(atPath: url.path) ? url : nil
     }
 }
 

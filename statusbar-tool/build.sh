@@ -4,9 +4,11 @@ set -euo pipefail
 SCRIPT_DIR="${0:A:h}"
 APP_DIR="$SCRIPT_DIR/build/DisplayBar.app"
 MACOS_DIR="$APP_DIR/Contents/MacOS"
+RESOURCES_DIR="$APP_DIR/Contents/Resources"
 MODULE_CACHE="$SCRIPT_DIR/build/ModuleCache"
 
 mkdir -p "$MACOS_DIR"
+mkdir -p "$RESOURCES_DIR"
 mkdir -p "$MODULE_CACHE"
 cp "$SCRIPT_DIR/Info.plist" "$APP_DIR/Contents/Info.plist"
 
@@ -38,5 +40,11 @@ clang \
   -framework ColorSync \
   -framework CoreGraphics \
   -o "$SCRIPT_DIR/build/profilectl"
+
+cp "$SCRIPT_DIR/build/profilectl" "$RESOURCES_DIR/profilectl"
+cp "$SCRIPT_DIR/build/hdrctl" "$RESOURCES_DIR/hdrctl"
+if [[ -x "$SCRIPT_DIR/../bin/displayplacer-patched" ]]; then
+  cp "$SCRIPT_DIR/../bin/displayplacer-patched" "$RESOURCES_DIR/displayplacer-patched"
+fi
 
 echo "$APP_DIR"

@@ -63,6 +63,28 @@ The app bundle is written to:
 statusbar-tool/build/DisplayBar.app
 ```
 
+## Downloadable App Package
+
+Create a DMG that can be downloaded from the repository and dragged into
+Applications:
+
+```zsh
+./scripts/package-dmg.sh
+```
+
+The package is written to:
+
+```text
+dist/DisplayBar.dmg
+dist/DisplayBar-0.1.0.dmg
+```
+
+Open the DMG, then drag `DisplayBar.app` to `Applications`.
+
+The app is not signed or notarized. On first launch, macOS may block it with a
+Gatekeeper warning. If you trust your own build, open System Settings > Privacy
+& Security and allow the app, or right-click the app and choose Open.
+
 ## Run
 
 Run from the repository:
@@ -180,6 +202,7 @@ did not accept the 10-bit request.
 ├── scripts/
 │   ├── check-displays.sh
 │   ├── main-only-dangerous.sh
+│   ├── package-dmg.sh
 │   ├── restore-dual.sh
 │   └── wake-displays-patched.sh
 └── statusbar-tool/
@@ -200,4 +223,3 @@ did not accept the 10-bit request.
 - 10-bit mode cannot be guaranteed unless macOS reads it back as active.
 - The patched rescue binary is a workaround for disappearing displays, not a
   general replacement for upstream `displayplacer`.
-

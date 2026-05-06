@@ -13,6 +13,25 @@ The build script compiles:
 - `Sources/DisplayBar/main.swift` into `build/DisplayBar.app`
 - `hdrctl.c` into `build/hdrctl`
 - `profilectl.c` into `build/profilectl`
+- helper copies into `build/DisplayBar.app/Contents/Resources`
+
+## Package
+
+From the repository root:
+
+```zsh
+./scripts/package-dmg.sh
+```
+
+This creates:
+
+```text
+dist/DisplayBar.dmg
+dist/DisplayBar-0.1.0.dmg
+```
+
+The DMG contains `DisplayBar.app` and an `Applications` shortcut for drag-and-drop
+installation.
 
 ## Run
 
@@ -90,4 +109,3 @@ Building currently emits two non-fatal warnings:
 - Legacy `NSMenu` code remains after an early `return` in `rebuildMenu()`.
 
 Both are cleanup items; they do not prevent the current popover app from running.
-
