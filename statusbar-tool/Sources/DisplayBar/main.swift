@@ -492,10 +492,10 @@ final class ColorProfileController {
             let rawName = capture(2).trimmingCharacters(in: .whitespacesAndNewlines)
             let fileName = path.map { profileName(path: $0) }
             let displayName: String
-            if rawName.isEmpty {
-                displayName = fileName ?? capture(1)
-            } else if rawName.hasPrefix("HDMI ") {
-                displayName = fileName ?? rawName
+            if let fileName, fileName.isEmpty == false {
+                displayName = fileName
+            } else if rawName.isEmpty {
+                displayName = capture(1)
             } else {
                 displayName = rawName
             }
