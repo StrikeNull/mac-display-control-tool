@@ -1,5 +1,7 @@
 # DisplayBar
 
+[中文说明](README.zh-CN.md)
+
 DisplayBar is a small macOS menu bar utility for controlling external displays.
 It was built around `displayplacer`, with a few local helpers for things
 `displayplacer` does not expose directly, such as HDR and ColorSync profiles.
