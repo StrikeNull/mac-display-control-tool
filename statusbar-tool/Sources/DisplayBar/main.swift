@@ -140,6 +140,10 @@ struct DisplayColorProfile {
 struct ColorProfileOption {
     var name: String
     var path: String
+
+    var normalizedPath: String {
+        (path as NSString).standardizingPath.lowercased()
+    }
 }
 
 final class Shell {
@@ -400,9 +404,9 @@ final class ColorProfileController {
         self.helperPath = helperPath
     }
 
-    func displayProfiles(displayID: UInt32) -> [DisplayColorProfile] {
+    func displayProfiles(identifier: String) -> [DisplayColorProfile] {
         guard FileManager.default.isExecutableFile(atPath: helperPath),
-              let result = try? Shell.run(helperPath, ["list", "\(displayID)"], timeout: 15),
+              let result = try? Shell.run(helperPath, ["list", identifier], timeout: 15),
               result.status == 0 else {
             return []
         }
@@ -443,8 +447,8 @@ final class ColorProfileController {
         }
     }
 
-    func setProfile(_ option: ColorProfileOption, displayID: UInt32, profileID: String) throws {
-        let result = try Shell.run(helperPath, ["set", "\(displayID)", profileID, option.path], timeout: 20)
+    func setProfile(_ option: ColorProfileOption, displayIdentifier: String, profileID: String) throws {
+        let result = try Shell.run(helperPath, ["set", displayIdentifier, profileID, option.path], timeout: 20)
         guard result.status == 0 else {
             throw NSError(domain: "DisplayBar.ColorProfile", code: Int(result.status), userInfo: [
                 NSLocalizedDescriptionKey: result.combinedOutput.isEmpty ? "ColorSync did not accept the selected profile." : result.combinedOutput
@@ -452,8 +456,8 @@ final class ColorProfileController {
         }
     }
 
-    func resetProfile(displayID: UInt32, profileID: String) throws {
-        let result = try Shell.run(helperPath, ["reset", "\(displayID)", profileID], timeout: 20)
+    func resetProfile(displayIdentifier: String, profileID: String) throws {
+        let result = try Shell.run(helperPath, ["reset", displayIdentifier, profileID], timeout: 20)
         guard result.status == 0 else {
             throw NSError(domain: "DisplayBar.ColorProfile", code: Int(result.status), userInfo: [
                 NSLocalizedDescriptionKey: result.combinedOutput.isEmpty ? "ColorSync did not reset the profile." : result.combinedOutput
@@ -1016,26 +1020,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func addColorControls(for display: DisplayInfo, to section: NSStackView) {
-        guard display.online, let contextualID = display.contextualID else {
+        guard display.online else {
             section.addArrangedSubview(label("颜色配置：屏幕离线", font: .systemFont(ofSize: 12), color: .secondaryLabelColor))
             return
         }
 
-        let currentProfiles = colorProfiles.displayProfiles(displayID: contextualID)
+        let profileLookup = colorProfileLookup(for: display)
+        let currentProfiles = profileLookup.profiles
         let current = currentProfiles.first { $0.isCurrent } ?? currentProfiles.first
         let currentName = displayName(forProfileName: current?.name, path: current?.path)
         let currentValue = label(currentName ?? "未知", font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
         section.addArrangedSubview(labeledRow("当前颜色配置", control: currentValue))
 
-        var options = currentProfiles.compactMap { profile -> ColorProfileOption? in
-            guard let path = profile.path else {
-                return nil
-            }
-            return ColorProfileOption(
-                name: displayName(forProfileName: profile.name, path: path) ?? "未知颜色配置",
-                path: path
-            )
-        }
+        var options = colorProfileOptions(for: display, profiles: currentProfiles)
         if let currentPath = current?.path,
            options.contains(where: { $0.path == currentPath }) == false {
             options.append(ColorProfileOption(
@@ -1060,6 +1057,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         section.addArrangedSubview(labeledRow("颜色配置", control: profilePopup))
         section.addArrangedSubview(actionButton("恢复默认颜色配置", action: .resetColorProfile(display), enabled: current != nil))
+    }
+
+    private func colorProfileOptions(for display: DisplayInfo, profiles: [DisplayColorProfile]) -> [ColorProfileOption] {
+        let profileOptions = profiles.compactMap { profile -> ColorProfileOption? in
+            guard let path = profile.path else {
+                return nil
+            }
+            return ColorProfileOption(
+                name: displayName(forProfileName: profile.name, path: path) ?? "未知颜色配置",
+                path: path
+            )
+        }
+        let installed = colorProfiles.installedProfiles()
+        if installed.isEmpty {
+            return profileOptions
+        }
+
+        let matched = installed.filter { colorProfileOption($0, matches: display) }
+        let preferred = profileOptions + matched
+        let preferredPaths = Set(preferred.map(\.normalizedPath))
+        return preferred + installed.filter { preferredPaths.contains($0.normalizedPath) == false }
+    }
+
+    private func colorProfileOption(_ option: ColorProfileOption, matches display: DisplayInfo) -> Bool {
+        let haystack = "\(option.name) \(option.path)".lowercased()
+        let needles = [
+            display.persistentID,
+            display.serialID ?? ""
+        ].map { $0.lowercased() }.filter { $0.isEmpty == false }
+        return needles.contains { haystack.contains($0) }
+    }
+
+    private func colorProfileLookup(for display: DisplayInfo) -> (identifier: String, profiles: [DisplayColorProfile]) {
+        var identifiers: [String] = []
+        if let contextualID = display.contextualID {
+            identifiers.append("\(contextualID)")
+        }
+        identifiers.append(display.persistentID)
+
+        for identifier in identifiers {
+            let profiles = colorProfiles.displayProfiles(identifier: identifier)
+            if profiles.isEmpty == false {
+                return (identifier, profiles)
+            }
+        }
+
+        return (identifiers.first ?? display.persistentID, [])
     }
 
     private func displayName(forProfileName name: String?, path: String?) -> String? {
@@ -1630,14 +1674,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func addColorProfileItems(for display: DisplayInfo, to menu: NSMenu) {
-        guard display.online, let contextualID = display.contextualID else {
+        guard display.online else {
             let item = NSMenuItem(title: "颜色配置：屏幕离线", action: nil, keyEquivalent: "")
             item.isEnabled = false
             menu.addItem(item)
             return
         }
 
-        let currentProfiles = colorProfiles.displayProfiles(displayID: contextualID)
+        let lookup = colorProfileLookup(for: display)
+        let currentProfiles = lookup.profiles
         let current = currentProfiles.first { $0.isCurrent } ?? currentProfiles.first
         let currentTitle = current.map { "当前颜色配置：\($0.name)" } ?? "当前颜色配置：未知"
         let currentItem = NSMenuItem(title: currentTitle, action: nil, keyEquivalent: "")
@@ -1648,7 +1693,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
         let profileMenuItem = NSMenuItem(title: "选择颜色配置", action: nil, keyEquivalent: "")
         let profileMenu = NSMenu()
-        let options = colorProfiles.installedProfiles()
+        let options = colorProfileOptions(for: display, profiles: currentProfiles)
 
         if options.isEmpty {
             let empty = NSMenuItem(title: "没有找到 ICC/ICM 文件", action: nil, keyEquivalent: "")
@@ -2062,34 +2107,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func performColorProfile(_ option: ColorProfileOption, display: DisplayInfo) {
-        guard let contextualID = display.contextualID else {
-            showAlert(title: "颜色配置失败", message: "没有读到这个屏幕的 contextual id。")
-            return
-        }
-
-        let current = colorProfiles.displayProfiles(displayID: contextualID).first { $0.isCurrent } ??
-            colorProfiles.displayProfiles(displayID: contextualID).first
+        let lookup = colorProfileLookup(for: display)
+        let current = lookup.profiles.first { $0.isCurrent } ?? lookup.profiles.first
         let profileID = current?.profileID ?? "1"
 
         do {
-            try colorProfiles.setProfile(option, displayID: contextualID, profileID: profileID)
+            try colorProfiles.setProfile(option, displayIdentifier: lookup.identifier, profileID: profileID)
         } catch {
             showAlert(title: "颜色配置失败", message: error.localizedDescription)
         }
     }
 
     private func resetColorProfile(_ display: DisplayInfo) {
-        guard let contextualID = display.contextualID else {
-            showAlert(title: "颜色配置失败", message: "没有读到这个屏幕的 contextual id。")
-            return
-        }
-
-        let current = colorProfiles.displayProfiles(displayID: contextualID).first { $0.isCurrent } ??
-            colorProfiles.displayProfiles(displayID: contextualID).first
+        let lookup = colorProfileLookup(for: display)
+        let current = lookup.profiles.first { $0.isCurrent } ?? lookup.profiles.first
         let profileID = current?.profileID ?? "1"
 
         do {
-            try colorProfiles.resetProfile(displayID: contextualID, profileID: profileID)
+            try colorProfiles.resetProfile(displayIdentifier: lookup.identifier, profileID: profileID)
         } catch {
             showAlert(title: "颜色配置失败", message: error.localizedDescription)
         }

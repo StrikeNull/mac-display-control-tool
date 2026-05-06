@@ -31,23 +31,43 @@ static void print_profile_value(CFTypeRef value) {
     }
 }
 
-static void list_profiles(uint32_t displayID) {
-    CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(displayID);
+static CFUUIDRef create_uuid_from_identifier(const char *identifier) {
+    bool numeric = true;
+    for (const char *cursor = identifier; *cursor; cursor++) {
+        if (*cursor < '0' || *cursor > '9') {
+            numeric = false;
+            break;
+        }
+    }
+
+    if (numeric) {
+        return CGDisplayCreateUUIDFromDisplayID((uint32_t)strtoul(identifier, NULL, 10));
+    }
+
+    CFStringRef string = CFStringCreateWithCString(kCFAllocatorDefault, identifier, kCFStringEncodingUTF8);
+    if (!string) return NULL;
+    CFUUIDRef uuid = CFUUIDCreateFromString(kCFAllocatorDefault, string);
+    CFRelease(string);
+    return uuid;
+}
+
+static void list_profiles(const char *displayIdentifier) {
+    CFUUIDRef uuid = create_uuid_from_identifier(displayIdentifier);
     if (!uuid) {
-        printf("id:%u no_uuid\n", displayID);
+        printf("id:%s no_uuid\n", displayIdentifier);
         return;
     }
 
     CFDictionaryRef info = ColorSyncDeviceCopyDeviceInfo(kColorSyncDisplayDeviceClass, uuid);
     if (!info) {
-        printf("id:%u no_colorsync_info\n", displayID);
+        printf("id:%s no_colorsync_info\n", displayIdentifier);
         CFRelease(uuid);
         return;
     }
 
     char uuidText[256] = {0};
     CFStringRef uuidString = CFUUIDCreateString(kCFAllocatorDefault, uuid);
-    printf("id:%u uuid:%s\n", displayID, cstring(uuidString, uuidText, sizeof(uuidText)));
+    printf("id:%s uuid:%s\n", displayIdentifier, cstring(uuidString, uuidText, sizeof(uuidText)));
     if (uuidString) CFRelease(uuidString);
 
     CFDictionaryRef factory = CFDictionaryGetValue(info, kColorSyncFactoryProfiles);
@@ -95,8 +115,8 @@ static void list_profiles(uint32_t displayID) {
     CFRelease(uuid);
 }
 
-static bool set_profile(uint32_t displayID, CFStringRef profileID, CFURLRef url) {
-    CFUUIDRef uuid = CGDisplayCreateUUIDFromDisplayID(displayID);
+static bool set_profile(const char *displayIdentifier, CFStringRef profileID, CFURLRef url) {
+    CFUUIDRef uuid = create_uuid_from_identifier(displayIdentifier);
     if (!uuid) return false;
 
     (void)profileID;
@@ -119,18 +139,17 @@ int main(int argc, char **argv) {
 
     if (strcmp(argv[1], "list") == 0) {
         for (int i = 2; i < argc; i++) {
-            list_profiles((uint32_t)strtoul(argv[i], NULL, 10));
+            list_profiles(argv[i]);
         }
         return 0;
     }
 
     if (argc < 4) return 2;
-    uint32_t displayID = (uint32_t)strtoul(argv[2], NULL, 10);
     CFStringRef profileID = CFStringCreateWithCString(kCFAllocatorDefault, argv[3], kCFStringEncodingUTF8);
     bool ok = false;
 
     if (strcmp(argv[1], "reset") == 0) {
-        ok = set_profile(displayID, profileID, NULL);
+        ok = set_profile(argv[2], profileID, NULL);
     } else if (strcmp(argv[1], "set") == 0 && argc >= 5) {
         if (access(argv[4], R_OK) != 0) {
             fprintf(stderr, "profile path is not readable: %s\n", argv[4]);
@@ -139,7 +158,7 @@ int main(int argc, char **argv) {
         }
         CFStringRef path = CFStringCreateWithCString(kCFAllocatorDefault, argv[4], kCFStringEncodingUTF8);
         CFURLRef url = CFURLCreateWithFileSystemPath(kCFAllocatorDefault, path, kCFURLPOSIXPathStyle, false);
-        ok = set_profile(displayID, profileID, url);
+        ok = set_profile(argv[2], profileID, url);
         CFRelease(url);
         CFRelease(path);
     }
