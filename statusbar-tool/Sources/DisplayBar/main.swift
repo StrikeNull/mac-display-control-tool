@@ -1074,19 +1074,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             ))
         }
         options = Array(Dictionary(grouping: options, by: \.path).compactMap { $0.value.first })
+        let normalizedCurrentPath = current?.path.map { ($0 as NSString).standardizingPath.lowercased() }
         options.sort {
-            if $0.path == current?.path {
+            if $0.normalizedPath == normalizedCurrentPath {
                 return true
             }
-            if $1.path == current?.path {
+            if $1.normalizedPath == normalizedCurrentPath {
                 return false
             }
             return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
         }
+        let selectedIndex = normalizedCurrentPath.flatMap { currentPath in
+            options.firstIndex { $0.normalizedPath == currentPath }
+        }
         let profilePopup = popUpButton(
             title: "选择颜色配置",
             options: options.map { ($0.name, MenuAction.colorProfile(display, $0), true) },
-            selectedTitle: current?.path.flatMap { path in options.first { $0.path == path }?.name } ?? currentName
+            selectedTitle: currentName,
+            selectedIndex: selectedIndex
         )
         section.addArrangedSubview(labeledRow("颜色配置", control: profilePopup))
         section.addArrangedSubview(actionButton("恢复默认颜色配置", action: .resetColorProfile(display), enabled: current != nil))
@@ -1140,6 +1145,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func displayName(forProfileName name: String?, path: String?) -> String? {
+        if let path, let displayProfileName = displayProfileFileName(path: path) {
+            return displayProfileName
+        }
+
         let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if trimmed.isEmpty == false {
             return trimmed
@@ -1149,6 +1158,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             return nil
         }
         return URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+    }
+
+    private func displayProfileFileName(path: String) -> String? {
+        let normalizedPath = (path as NSString).standardizingPath
+        guard normalizedPath.contains("/ColorSync/Profiles/Displays/") else {
+            return nil
+        }
+
+        let baseName = URL(fileURLWithPath: normalizedPath).deletingPathExtension().lastPathComponent
+        let uuidLength = 36
+        guard baseName.count > uuidLength + 1 else {
+            return baseName.isEmpty ? nil : baseName
+        }
+
+        let uuidStart = baseName.index(baseName.endIndex, offsetBy: -uuidLength)
+        let separator = baseName.index(before: uuidStart)
+        guard baseName[separator] == "-" else {
+            return baseName
+        }
+
+        let uuid = String(baseName[uuidStart...])
+        let groupLengths = uuid.split(separator: "-", omittingEmptySubsequences: false).map(\.count)
+        guard groupLengths == [8, 4, 4, 4, 12],
+              uuid.allSatisfy({ $0 == "-" || $0.isHexDigit }) else {
+            return baseName
+        }
+
+        let displayName = String(baseName[..<separator])
+        return displayName.isEmpty ? baseName : displayName
     }
 
     private func label(_ text: String, font: NSFont, color: NSColor = .labelColor) -> NSTextField {
@@ -1233,7 +1271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         return button
     }
 
-    private func popUpButton(title: String, options: [(String, MenuAction, Bool)], selectedTitle: String?) -> NSPopUpButton {
+    private func popUpButton(title: String, options: [(String, MenuAction, Bool)], selectedTitle: String?, selectedIndex: Int? = nil) -> NSPopUpButton {
         let popUp = NSPopUpButton()
         popUp.target = self
         popUp.action = #selector(handlePopUpSelection(_:))
@@ -1252,7 +1290,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             item?.isEnabled = option.2
         }
 
-        if let selectedTitle,
+        if let selectedIndex,
+           options.indices.contains(selectedIndex) {
+            popUp.selectItem(at: selectedIndex)
+        } else if let selectedTitle,
            let index = options.firstIndex(where: { $0.0 == selectedTitle }) {
             popUp.selectItem(at: index)
         }
