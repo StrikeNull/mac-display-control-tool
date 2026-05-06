@@ -1,121 +1,130 @@
 # DisplayBar
 
-[中文说明](README.zh-CN.md)
+[English README](README.en.md)
 
-DisplayBar is a small macOS menu bar utility for controlling external displays.
-It was built around `displayplacer`, with a few local helpers for things
-`displayplacer` does not expose directly, such as HDR and ColorSync profiles.
+DisplayBar 是一个 macOS 状态栏显示器控制工具，用来快速管理外接屏幕。
+它基于 `displayplacer`，并额外打包了几个本地 helper，用来处理
+`displayplacer` 本身没有直接暴露的能力，例如 HDR 和 ColorSync 颜色配置。
 
-The app is intended for personal display setups where quick switching matters:
-turn a display on or off, change resolution and refresh rate, toggle HiDPI/HDR,
-set the main display, choose a ColorSync profile, and open the system display
-arrangement panel when manual layout is needed.
+这个工具主要面向个人多屏场景：快速开启或关闭某个屏幕、切换分辨率和刷新率、
+开启或关闭 HiDPI/HDR、设置主屏幕、切换 ColorSync 颜色配置，以及在需要手动调整时
+直接跳转到 macOS 的显示器排列设置。
 
-## Features
+## 功能
 
-- Menu bar popover UI that stays open while changing settings.
-- List currently active displays.
-- Enable or disable a display through `displayplacer`.
-- Recover a disabled/offline display through a patched rescue binary.
-- Set display mode:
-  - resolution
-  - refresh rate
-  - HiDPI scaling
-  - color depth, including a 10-bit attempt option when HDR is supported
-- Toggle HDR per display through macOS private display APIs.
-- Set the main display.
-- Switch screen mode:
-  - extend
-  - mirror
-  - main display only
-  - secondary display only
-- Apply simple secondary-display arrangements:
-  - left
-  - right
-  - above
-  - below
-- Open macOS Display Settings directly for system arrangement.
-- Read and set per-display ColorSync profiles.
+- 状态栏 popover 界面，修改设置时不会因为点击控件就自动关闭。
+- 展示当前在线屏幕。
+- 通过 `displayplacer` 开启或关闭屏幕。
+- 对被关闭或离线的历史屏幕提供恢复入口。
+- 对消失的屏幕提供 patched `displayplacer` 救援路径。
+- 设置显示模式：
+  - 分辨率
+  - 刷新率
+  - HiDPI 缩放
+  - 颜色位数，包括 HDR 可用时的 `10-bit（尝试）`
+- 通过 macOS 私有显示 API 按屏幕开启或关闭 HDR。
+- 设置主屏幕。
+- 切换屏幕模式：
+  - 扩展
+  - 复制
+  - 仅主屏
+  - 仅副屏
+- 设置简单的副屏排列：
+  - 副屏在左
+  - 副屏在右
+  - 副屏在上
+  - 副屏在下
+- 直接打开 macOS 显示器系统设置，用于系统级屏幕排列。
+- 读取并设置每个屏幕的 ColorSync 颜色配置。
 
-## Requirements
+## 系统要求
 
-- macOS.
-- Apple Silicon or Intel Mac with external display support.
-- Homebrew `displayplacer` at `/opt/homebrew/bin/displayplacer`, or set
-  `DISPLAYPLACER` to another path.
-- Xcode command line tools for building the Swift app and C helpers.
+- macOS。
+- 支持外接屏幕的 Apple Silicon 或 Intel Mac。
+- Homebrew 安装的 `displayplacer`，默认路径为 `/opt/homebrew/bin/displayplacer`。
+- 构建时需要 Xcode Command Line Tools。
 
-Install `displayplacer`:
+安装 `displayplacer`：
 
 ```zsh
 brew install displayplacer
 ```
 
-## Build
+如果你的 `displayplacer` 不在默认路径，可以通过环境变量指定：
 
-Build the menu bar app and helper binaries:
+```zsh
+DISPLAYPLACER=/path/to/displayplacer
+```
+
+## 构建
+
+在仓库根目录运行：
 
 ```zsh
 ./statusbar-tool/build.sh
 ```
 
-The app bundle is written to:
+生成的 App 在：
 
 ```text
 statusbar-tool/build/DisplayBar.app
 ```
 
-## Downloadable App Package
+构建脚本会同时编译：
 
-Create a DMG that can be downloaded from the repository and dragged into
-Applications:
+- Swift 状态栏 App
+- `hdrctl`
+- `profilectl`
+- 打包到 App Resources 内的 helper
+
+## 打包 DMG
+
+生成可下载、可拖入 Applications 的 DMG：
 
 ```zsh
 ./scripts/package-dmg.sh
 ```
 
-The package is written to:
+输出文件：
 
 ```text
 dist/DisplayBar.dmg
 dist/DisplayBar-0.1.0.dmg
 ```
 
-Open the DMG, then drag `DisplayBar.app` to `Applications`.
+打开 DMG 后，把 `DisplayBar.app` 拖到 `Applications` 即可。
 
-The app is not signed or notarized. On first launch, macOS may block it with a
-Gatekeeper warning. If you trust your own build, open System Settings > Privacy
-& Security and allow the app, or right-click the app and choose Open.
+当前 App 没有签名和 notarize。首次打开时 macOS 可能会拦截。如果你信任自己的构建，
+可以在“系统设置 > 隐私与安全性”里允许打开，或右键 App 选择“打开”。
 
-## Run
+## 运行
 
-Run from the repository:
+从仓库直接运行：
 
 ```zsh
 ./statusbar-tool/run.sh
 ```
 
-Or open the app bundle:
+或打开构建后的 App：
 
 ```zsh
 open statusbar-tool/build/DisplayBar.app
 ```
 
-The status bar icon shows the number of currently active displays when more
-than one display is enabled.
+当在线屏幕多于一个时，状态栏图标会显示当前在线屏幕数量。
 
-## Environment
+## 环境变量
 
-Optional overrides:
+可选配置：
 
 ```zsh
 DISPLAYPLACER=/path/to/displayplacer
 DISPLAY_CONTROL_TOOL_HOME=/path/to/display-control-tool
 ```
 
-## Helpers
+## Helper 用法
 
-HDR helper:
+HDR：
 
 ```zsh
 ./statusbar-tool/build/hdrctl status 1 3
@@ -123,7 +132,7 @@ HDR helper:
 ./statusbar-tool/build/hdrctl off 1
 ```
 
-ColorSync profile helper:
+ColorSync 颜色配置：
 
 ```zsh
 ./statusbar-tool/build/profilectl list 1 3
@@ -131,30 +140,26 @@ ColorSync profile helper:
 ./statusbar-tool/build/profilectl reset 1 1
 ```
 
-Patched display wake helper:
+patched 屏幕恢复脚本：
 
 ```zsh
 ./scripts/wake-displays-patched.sh
 ```
 
-## Display Disable And Recovery
+## 关闭屏幕与恢复
 
-Disabling a display with `displayplacer` can make that display disappear from
-`displayplacer list`. When that happens, normal `displayplacer` may refuse to
-operate on the missing display id.
+通过 `displayplacer` 关闭屏幕后，这个屏幕可能会从 `displayplacer list` 里消失。
+这种情况下，普通 `displayplacer` 可能无法再操作这个丢失的 id。
 
-DisplayBar keeps a lightweight record of previously seen displays and shows
-disabled/offline displays in a separate recovery section. For displays that
-vanish after being disabled, it can use `bin/displayplacer-patched` as a rescue
-path.
+DisplayBar 会记录曾经见过的屏幕，并在单独区域显示已关闭或离线屏幕。对于关闭后消失的屏幕，
+DisplayBar 可以使用 `bin/displayplacer-patched` 作为救援路径。
 
-Treat display disabling as an advanced action. The safest way to temporarily
-"turn off" a display is often a black overlay, not a real display disable.
+真正关闭显示器属于偏高级的操作。只想临时不用某个屏幕时，黑屏遮罩通常比真实关闭显示器更安全，
+因为真实关闭可能影响排列、主副屏和窗口位置。
 
-## HDR Notes
+## HDR 说明
 
-`displayplacer` does not expose HDR controls. DisplayBar uses private macOS
-display APIs:
+`displayplacer` 不提供 HDR 控制。DisplayBar 使用 macOS 私有显示 API：
 
 - `CoreDisplay_Display_SupportsHDRMode`
 - `CoreDisplay_Display_IsHDRModeEnabled`
@@ -163,36 +168,43 @@ display APIs:
 - `SLSDisplayIsHDRModeEnabled`
 - `SLSDisplaySetHDRModeEnabled`
 
-These APIs can change between macOS releases. If macOS reports the requested
-HDR state after toggling, DisplayBar treats the operation as successful.
+这些 API 可能随 macOS 版本变化。DisplayBar 在切换 HDR 后会再次读取状态；
+如果 macOS 读回来的状态符合请求，就认为操作成功。
 
-## Color Profiles
+## 颜色配置
 
-Color profiles use public ColorSync APIs through `profilectl`.
+颜色配置通过 `profilectl` 使用公开 ColorSync API。
 
-DisplayBar reads the profiles associated with each display from ColorSync and
-uses those display-specific profiles for the popover. It does not present every
-ICC file installed on the system as if it belonged to every display.
+DisplayBar 会优先读取与当前屏幕绑定的 ColorSync profile，并把当前 profile 放在下拉列表最前面。
+当 ColorSync 在远程桌面或离线屏幕状态下无法返回完整设备表时，DisplayBar 会回退到系统中可用的
+显示器 ICC/ICM 文件列表。
 
-Some displays expose generic ColorSync profile names such as `HDMI HD`; when
-that happens, DisplayBar falls back to the ICC profile description or filename
-for a clearer label.
+一些显示器 profile 的 ICC 内部描述可能是通用名称，例如“普通灰度描述文件”。对于
+`/Library/ColorSync/Profiles/Displays/*.icc` 这类显示器专用文件，DisplayBar 会优先使用文件名里的
+显示器名称，例如 `Odyssey G5-UUID.icc` 会显示为 `Odyssey G5`。
 
-## 10-bit Color Depth
+## 10-bit 颜色位数
 
-DisplayBar shows the current color depth reported by `displayplacer`.
+DisplayBar 会显示 `displayplacer` 当前读到的颜色位数。
 
-Some displays and links report 10-bit capability through lower-level system
-data, but `displayplacer list` may still expose only `color_depth:8` modes.
-For HDR-capable displays, DisplayBar can show `10-bit（尝试）`. Selecting it sends
-`color_depth:10` through `displayplacer`, then refreshes and checks the reported
-state.
+有些屏幕和线缆组合在底层看起来支持 10-bit，但 `displayplacer list` 仍然只列出
+`color_depth:8` 的模式。对于支持 HDR 的屏幕，DisplayBar 会显示 `10-bit（尝试）`。
+选择后会通过 `displayplacer` 发送 `color_depth:10`，然后刷新并读取结果。
 
-10-bit should be considered active only if macOS reads back `Color Depth: 10`.
-If it reads back `8`, macOS or the current cable/refresh-rate/HDR combination
-did not accept the 10-bit request.
+只有 macOS 读回 `Color Depth: 10` 时，才应该认为 10-bit 真正生效。如果读回仍是 `8`，
+说明当前 macOS、线缆、刷新率、HDR 或屏幕组合没有接受 10-bit 请求。
 
-## Repository Layout
+## 远程桌面注意事项
+
+ToDesk、Moonlight 等远程桌面工具可能影响 macOS 的显示器枚举和 ColorSync 设备表：
+
+- 离线屏幕可能无法完整读取。
+- ColorSync 可能只返回当前屏幕的一条 profile。
+- 分辨率、刷新率、HDR 或颜色位数列表可能和本机直连时不同。
+
+如果颜色配置或屏幕列表看起来异常，建议在本机屏幕前直接操作一次，或打开 macOS 系统设置确认。
+
+## 仓库结构
 
 ```text
 .
@@ -215,13 +227,19 @@ did not accept the 10-bit request.
     └── run.sh
 ```
 
-## Known Limitations
+## 已知限制
 
-- The app is tailored for local macOS display experiments, not a polished
-  signed distribution.
-- HDR uses private APIs and may break on future macOS versions.
-- Display enable/disable behavior depends heavily on macOS, display firmware,
-  cable, dock, and `displayplacer`.
-- 10-bit mode cannot be guaranteed unless macOS reads it back as active.
-- The patched rescue binary is a workaround for disappearing displays, not a
-  general replacement for upstream `displayplacer`.
+- 当前项目主要用于个人 macOS 多屏实验，不是完整签名分发的软件。
+- HDR 使用私有 API，未来 macOS 版本可能失效。
+- 屏幕开启、关闭和恢复行为依赖 macOS、屏幕固件、线缆、扩展坞和 `displayplacer`。
+- 10-bit 是否生效必须以 macOS 读回值为准。
+- patched rescue binary 只是针对“关闭后屏幕消失”的 workaround，不是上游 `displayplacer` 的通用替代品。
+
+## 当前构建警告
+
+构建时可能出现两个非致命 warning：
+
+- `NSBox.borderType` 已被 macOS 标记为 deprecated。
+- `rebuildMenu()` 中保留了一段早期 `NSMenu` 代码，当前 popover 路径会提前 `return`。
+
+这两个 warning 不影响当前 App 运行。
