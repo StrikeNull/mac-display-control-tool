@@ -6,6 +6,24 @@ DisplayBar 是一个 macOS 状态栏显示器控制工具，用来快速管理�
 它基于 `displayplacer`，并额外打包了几个本地 helper，用来处理
 `displayplacer` 本身没有直接暴露的能力，例如 HDR 和 ColorSync 颜色配置。
 
+## 下载
+
+最新可用版本在 GitHub Releases：
+
+[下载 DisplayBar-0.1.0.dmg](https://github.com/StrikeNull/mac-display-control-tool/releases/download/v0.1.0/DisplayBar-0.1.0.dmg)
+
+打开 DMG 后，把 `DisplayBar.app` 拖到 `Applications` 即可。
+
+当前 App 没有签名和 notarize。首次打开时 macOS 可能会拦截。如果你信任这个开源项目，
+可以在“系统设置 > 隐私与安全性”里允许打开，或右键 App 选择“打开”。
+
+## 适合谁
+
+- 经常在 macOS 上切换多屏配置的人。
+- 外接屏需要频繁调整分辨率、刷新率、HiDPI 或 HDR 的人。
+- 希望像 Windows 一样快速切换扩展、复制、仅主屏、仅副屏的人。
+- 需要快速切换 ColorSync 颜色配置的外接屏用户。
+
 这个工具主要面向个人多屏场景：快速开启或关闭某个屏幕、切换分辨率和刷新率、
 开启或关闭 HiDPI/HDR、设置主屏幕、切换 ColorSync 颜色配置，以及在需要手动调整时
 直接跳转到 macOS 的显示器排列设置。
@@ -77,9 +95,9 @@ statusbar-tool/build/DisplayBar.app
 - `profilectl`
 - 打包到 App Resources 内的 helper
 
-## 打包 DMG
+## 自行打包 DMG
 
-生成可下载、可拖入 Applications 的 DMG：
+从源码生成可下载、可拖入 Applications 的 DMG：
 
 ```zsh
 ./scripts/package-dmg.sh
@@ -91,11 +109,6 @@ statusbar-tool/build/DisplayBar.app
 dist/DisplayBar.dmg
 dist/DisplayBar-0.1.0.dmg
 ```
-
-打开 DMG 后，把 `DisplayBar.app` 拖到 `Applications` 即可。
-
-当前 App 没有签名和 notarize。首次打开时 macOS 可能会拦截。如果你信任自己的构建，
-可以在“系统设置 > 隐私与安全性”里允许打开，或右键 App 选择“打开”。
 
 ## 运行
 

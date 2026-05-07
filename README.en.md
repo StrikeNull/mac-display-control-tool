@@ -6,6 +6,25 @@ DisplayBar is a small macOS menu bar utility for controlling external displays.
 It was built around `displayplacer`, with a few local helpers for things
 `displayplacer` does not expose directly, such as HDR and ColorSync profiles.
 
+## Download
+
+The latest usable build is available from GitHub Releases:
+
+[Download DisplayBar-0.1.0.dmg](https://github.com/StrikeNull/mac-display-control-tool/releases/download/v0.1.0/DisplayBar-0.1.0.dmg)
+
+Open the DMG, then drag `DisplayBar.app` to `Applications`.
+
+The app is not signed or notarized. On first launch, macOS may block it with a
+Gatekeeper warning. If you trust this open-source build, open System Settings >
+Privacy & Security and allow the app, or right-click the app and choose Open.
+
+## Who It Is For
+
+- People who frequently switch multi-display setups on macOS.
+- External-display users who often change resolution, refresh rate, HiDPI, or HDR.
+- Users who want quick Windows-like display modes: extend, mirror, main-only, and secondary-only.
+- External-display users who need fast ColorSync profile switching.
+
 The app is intended for personal display setups where quick switching matters:
 turn a display on or off, change resolution and refresh rate, toggle HiDPI/HDR,
 set the main display, choose a ColorSync profile, and open the system display
@@ -65,9 +84,9 @@ The app bundle is written to:
 statusbar-tool/build/DisplayBar.app
 ```
 
-## Downloadable App Package
+## Build A DMG
 
-Create a DMG that can be downloaded from the repository and dragged into
+Create a DMG from source that can be dragged into
 Applications:
 
 ```zsh
@@ -80,12 +99,6 @@ The package is written to:
 dist/DisplayBar.dmg
 dist/DisplayBar-0.1.0.dmg
 ```
-
-Open the DMG, then drag `DisplayBar.app` to `Applications`.
-
-The app is not signed or notarized. On first launch, macOS may block it with a
-Gatekeeper warning. If you trust your own build, open System Settings > Privacy
-& Security and allow the app, or right-click the app and choose Open.
 
 ## Run
 
