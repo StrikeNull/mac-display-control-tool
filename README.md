@@ -6,6 +6,8 @@ DisplayBar 是一个 macOS 状态栏显示器控制工具，用来快速管理�
 它基于 `displayplacer`，并额外打包了几个本地 helper，用来处理
 `displayplacer` 本身没有直接暴露的能力，例如 HDR 和 ColorSync 颜色配置。
 
+![DisplayBar 状态栏控制面板](docs/images/displaybar-popover.png)
+
 ## 下载
 
 最新可用版本在 GitHub Releases：
