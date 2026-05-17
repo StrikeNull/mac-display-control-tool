@@ -9,7 +9,6 @@ BUILD_DIR="$ROOT_DIR/statusbar-tool/build"
 APP_PATH="$BUILD_DIR/$APP_NAME.app"
 STAGE_DIR="$DIST_DIR/dmg-stage"
 DMG_PATH="$DIST_DIR/$APP_NAME-$VERSION.dmg"
-LATEST_DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
 
 "$ROOT_DIR/statusbar-tool/build.sh" >/dev/null
 
@@ -20,16 +19,13 @@ mkdir -p "$DIST_DIR"
 cp -R "$APP_PATH" "$STAGE_DIR/$APP_NAME.app"
 ln -s /Applications "$STAGE_DIR/Applications"
 
-rm -f "$DMG_PATH" "$LATEST_DMG_PATH"
+rm -f "$DMG_PATH"
 hdiutil create \
   -volname "$APP_NAME" \
   -srcfolder "$STAGE_DIR" \
   -ov \
   -format UDZO \
   "$DMG_PATH"
-
-cp "$DMG_PATH" "$LATEST_DMG_PATH"
 rm -rf "$STAGE_DIR"
 
 echo "$DMG_PATH"
-echo "$LATEST_DMG_PATH"

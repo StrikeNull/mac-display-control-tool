@@ -98,7 +98,6 @@ Applications:
 The package is written to:
 
 ```text
-dist/DisplayBar.dmg
 dist/DisplayBar-0.1.0.dmg
 ```
 

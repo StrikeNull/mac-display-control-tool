@@ -23,6 +23,7 @@ swiftc \
   -framework ColorSync \
   -framework CoreGraphics \
   -framework CoreDisplay \
+  -framework DisplayServices \
   -framework SkyLight \
   -o "$MACOS_DIR/DisplayBar"
 

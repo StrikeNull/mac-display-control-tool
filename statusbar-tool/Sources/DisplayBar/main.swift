@@ -12,6 +12,18 @@ private func CoreDisplay_Display_IsHDRModeEnabled(_ display: CGDirectDisplayID) 
 @_silgen_name("CoreDisplay_Display_SetHDRModeEnabled")
 private func CoreDisplay_Display_SetHDRModeEnabled(_ display: CGDirectDisplayID, _ enabled: Bool) -> Bool
 
+@_silgen_name("CoreDisplay_Display_GetUserBrightness")
+private func CoreDisplay_Display_GetUserBrightness(_ display: CGDirectDisplayID) -> Float
+
+@_silgen_name("CoreDisplay_Display_SetUserBrightness")
+private func CoreDisplay_Display_SetUserBrightness(_ display: CGDirectDisplayID, _ value: Float) -> Bool
+
+@_silgen_name("DisplayServicesGetBrightness")
+private func DisplayServicesGetBrightness(_ display: CGDirectDisplayID, _ brightness: UnsafeMutablePointer<Float>) -> Int32
+
+@_silgen_name("DisplayServicesSetBrightness")
+private func DisplayServicesSetBrightness(_ display: CGDirectDisplayID, _ brightness: Float) -> Int32
+
 @_silgen_name("SLSDisplaySupportsHDRMode")
 private func SLSDisplaySupportsHDRMode(_ display: CGDirectDisplayID) -> Bool
 
@@ -20,6 +32,15 @@ private func SLSDisplayIsHDRModeEnabled(_ display: CGDirectDisplayID) -> Bool
 
 @_silgen_name("SLSDisplaySetHDRModeEnabled")
 private func SLSDisplaySetHDRModeEnabled(_ display: CGDirectDisplayID, _ enabled: Bool) -> Bool
+
+private func presentedColorDepth(_ colorDepth: Int) -> Int {
+    // displayplacer can report RGB888 modes as color_depth:7 on some macOS/display links.
+    colorDepth == 7 ? 8 : colorDepth
+}
+
+private func colorDepthTitle(_ colorDepth: Int) -> String {
+    "\(presentedColorDepth(colorDepth))-bit"
+}
 
 struct DisplayMode: Codable, Equatable, Hashable {
     var modeNumber: Int
@@ -45,7 +66,7 @@ struct DisplayMode: Codable, Equatable, Hashable {
             parts.append("\(hertz)Hz")
         }
         if let colorDepth {
-            parts.append("\(colorDepth)-bit")
+            parts.append(colorDepthTitle(colorDepth))
         }
         parts.append(isHiDPI ? "HiDPI" : "标准")
         return parts.joined(separator: "  ")
@@ -63,6 +84,8 @@ struct DisplayInfo: Codable, Equatable {
     var scaling: String?
     var origin: String?
     var rotation: Int?
+    var graphicsColorDepth: Int?
+    var linkDescription: DisplayLinkDescription?
     var enabled: Bool?
     var isMain: Bool
     var online: Bool = true
@@ -115,6 +138,54 @@ struct DisplayInfo: Codable, Equatable {
             return nil
         }
         return (width, height)
+    }
+}
+
+struct DisplayLinkDescription: Codable, Equatable {
+    var bitDepth: Int?
+    var pixelEncoding: Int?
+    var eotf: Int?
+    var range: Int?
+
+    var title: String {
+        var parts: [String] = []
+        if let bitDepth {
+            parts.append("\(bitDepth)-bit")
+        }
+        if let pixelEncoding {
+            parts.append(pixelEncodingTitle(pixelEncoding))
+        }
+        if let eotf {
+            parts.append(eotfTitle(eotf))
+        }
+        if let range {
+            parts.append(range == 1 ? "全范围" : "有限范围")
+        }
+        return parts.isEmpty ? "未知" : parts.joined(separator: "  ")
+    }
+
+    private func pixelEncodingTitle(_ value: Int) -> String {
+        switch value {
+        case 0:
+            return "RGB"
+        case 1:
+            return "YCbCr 4:4:4"
+        case 2:
+            return "YCbCr"
+        default:
+            return "编码 \(value)"
+        }
+    }
+
+    private func eotfTitle(_ value: Int) -> String {
+        switch value {
+        case 0:
+            return "SDR"
+        case 2:
+            return "HDR"
+        default:
+            return "EOTF \(value)"
+        }
     }
 }
 
@@ -276,6 +347,8 @@ final class DisplayPlacer {
                     scaling: nil,
                     origin: nil,
                     rotation: nil,
+                    graphicsColorDepth: nil,
+                    linkDescription: nil,
                     enabled: nil,
                     isMain: false,
                     modes: []
@@ -394,6 +467,142 @@ final class HDRController {
                 NSLocalizedDescriptionKey: "macOS did not report the requested HDR state after toggling. The private HDR API can vary between macOS releases."
             ])
         }
+    }
+}
+
+final class BrightnessController {
+    func brightness(displayID: UInt32) -> Float? {
+        var value: Float = -1
+        let error = DisplayServicesGetBrightness(CGDirectDisplayID(displayID), &value)
+        if error == 0, value.isFinite, value >= 0, value <= 1 {
+            return value
+        }
+
+        let fallback = CoreDisplay_Display_GetUserBrightness(CGDirectDisplayID(displayID))
+        guard fallback.isFinite, fallback >= 0, fallback <= 1,
+              CoreDisplay_Display_SetUserBrightness(CGDirectDisplayID(displayID), fallback) else {
+            return nil
+        }
+        return fallback
+    }
+
+    func setBrightness(_ brightness: Float, displayID: UInt32) throws {
+        let clamped = min(max(brightness, 0), 1)
+        let display = CGDirectDisplayID(displayID)
+        if DisplayServicesSetBrightness(display, clamped) == 0 {
+            return
+        }
+
+        if CoreDisplay_Display_SetUserBrightness(display, clamped) {
+            return
+        }
+
+        throw NSError(domain: "DisplayBar.Brightness", code: 1, userInfo: [
+            NSLocalizedDescriptionKey: "macOS 没有接受亮度设置。这块屏幕可能需要 DDC/CI，或当前连接方式不允许第三方程序调整亮度。"
+        ])
+    }
+}
+
+final class ConnectionModeController {
+    func setBitDepth(_ bitDepth: Int, display: DisplayInfo) throws {
+        guard [8, 10, 12].contains(bitDepth) else {
+            throw NSError(domain: "DisplayBar.ConnectionMode", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "不支持的 connectionMode 位深：\(bitDepth)-bit。"
+            ])
+        }
+
+        let urls = windowServerDisplayPreferenceURLs()
+        var changed = false
+        var lastError: Error?
+
+        for url in urls {
+            do {
+                guard FileManager.default.isWritableFile(atPath: url.path) else {
+                    continue
+                }
+                let data = try Data(contentsOf: url)
+                guard let plist = try PropertyListSerialization.propertyList(
+                    from: data,
+                    options: [.mutableContainersAndLeaves],
+                    format: nil
+                ) as? NSMutableDictionary else {
+                    continue
+                }
+
+                if updateLinkDescription(in: plist, uuid: display.persistentID, bitDepth: bitDepth, template: display.linkDescription) {
+                    try backupIfNeeded(url)
+                    let output = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+                    try output.write(to: url, options: .atomic)
+                    changed = true
+                }
+            } catch {
+                lastError = error
+            }
+        }
+
+        guard changed else {
+            throw NSError(domain: "DisplayBar.ConnectionMode", code: 2, userInfo: [
+                NSLocalizedDescriptionKey: lastError?.localizedDescription ?? "没有找到可写的 WindowServer connectionMode 配置。"
+            ])
+        }
+
+        _ = try? Shell.run("/usr/bin/killall", ["cfprefsd"], timeout: 5)
+    }
+
+    private func windowServerDisplayPreferenceURLs() -> [URL] {
+        var urls: [URL] = []
+        let fileManager = FileManager.default
+        let byHostURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/ByHost")
+        if let files = try? fileManager.contentsOfDirectory(at: byHostURL, includingPropertiesForKeys: nil) {
+            urls.append(contentsOf: files.filter {
+                $0.lastPathComponent.hasPrefix("com.apple.windowserver.displays.") &&
+                    $0.pathExtension == "plist"
+            }.sorted { $0.path < $1.path })
+        }
+        return urls
+    }
+
+    private func backupIfNeeded(_ url: URL) throws {
+        let backup = url.deletingPathExtension().appendingPathExtension("DisplayBarBackup.plist")
+        if FileManager.default.fileExists(atPath: backup.path) == false {
+            try FileManager.default.copyItem(at: url, to: backup)
+        }
+    }
+
+    private func updateLinkDescription(
+        in object: Any,
+        uuid: String,
+        bitDepth: Int,
+        template: DisplayLinkDescription?
+    ) -> Bool {
+        var changed = false
+
+        if let dictionary = object as? NSMutableDictionary {
+            if dictionary["UUID"] as? String == uuid {
+                let link = (dictionary["LinkDescription"] as? NSMutableDictionary) ?? NSMutableDictionary()
+                link["BitDepth"] = bitDepth
+                link["PixelEncoding"] = template?.pixelEncoding ?? link["PixelEncoding"] ?? 1
+                link["EOTF"] = template?.eotf ?? link["EOTF"] ?? 0
+                link["Range"] = template?.range ?? link["Range"] ?? 0
+                dictionary["LinkDescription"] = link
+                changed = true
+            }
+
+            for value in dictionary.allValues {
+                if updateLinkDescription(in: value, uuid: uuid, bitDepth: bitDepth, template: template) {
+                    changed = true
+                }
+            }
+        } else if let array = object as? NSMutableArray {
+            for value in array {
+                if updateLinkDescription(in: value, uuid: uuid, bitDepth: bitDepth, template: template) {
+                    changed = true
+                }
+            }
+        }
+
+        return changed
     }
 }
 
@@ -586,6 +795,7 @@ enum MenuAction {
     case displayRefreshRate(DisplayInfo, Int)
     case displayColorDepth(DisplayInfo, Int)
     case displayHiDPI(DisplayInfo, Bool)
+    case displayBrightness(DisplayInfo, Float)
     case colorProfile(DisplayInfo, ColorProfileOption)
     case resetColorProfile(DisplayInfo)
     case rescue(DisplayInfo?)
@@ -644,6 +854,11 @@ final class ActionButton: NSButton {
     var menuAction: MenuAction?
 }
 
+final class BrightnessSlider: NSSlider {
+    var display: DisplayInfo?
+    weak var valueLabel: NSTextField?
+}
+
 final class FlippedView: NSView {
     override var isFlipped: Bool {
         true
@@ -654,6 +869,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let popover = NSPopover()
     private let hdr = HDRController()
+    private let brightness = BrightnessController()
+    private let connectionMode = ConnectionModeController()
     private var colorProfiles: ColorProfileController!
     private var displayPlacer: DisplayPlacer!
     private var projectRoot: URL!
@@ -759,6 +976,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         performAction(box.action)
     }
 
+    @objc private func handleBrightnessSlider(_ sender: BrightnessSlider) {
+        guard let display = sender.display else {
+            return
+        }
+        sender.valueLabel?.stringValue = "\(Int((sender.doubleValue * 100).rounded()))%"
+        performAction(.displayBrightness(display, Float(sender.doubleValue)))
+    }
+
     private func performAction(_ action: MenuAction) {
         switch action {
         case .refresh:
@@ -788,6 +1013,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             performDisplayColorDepth(colorDepth, display: display)
         case .displayHiDPI(let display, let enabled):
             performDisplayHiDPI(enabled, display: display)
+        case .displayBrightness(let display, let value):
+            performDisplayBrightness(value, display: display)
         case .colorProfile(let display, let option):
             performColorProfile(option, display: display)
         case .resetColorProfile(let display):
@@ -946,11 +1173,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         section.addArrangedSubview(powerRow)
 
         section.addArrangedSubview(label(currentDisplayModeTitle(display), font: .systemFont(ofSize: 12), color: .secondaryLabelColor))
+        addBrightnessControl(for: display, to: section)
         addDisplayModeControls(for: display, to: section)
         addToggleControls(for: display, to: section)
         addColorControls(for: display, to: section)
 
         return box
+    }
+
+    private func addBrightnessControl(for display: DisplayInfo, to section: NSStackView) {
+        guard display.online, display.enabled == true, let displayID = display.contextualID else {
+            return
+        }
+
+        guard let current = brightness.brightness(displayID: displayID) else {
+            section.addArrangedSubview(labeledRow(
+                "亮度",
+                control: label("当前屏幕不支持软件亮度控制", font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+            ))
+            return
+        }
+
+        let row = horizontalStack(spacing: 8)
+        let slider = BrightnessSlider(value: Double(current), minValue: 0, maxValue: 1, target: self, action: #selector(handleBrightnessSlider(_:)))
+        slider.display = display
+        slider.controlSize = .small
+        slider.isContinuous = false
+        slider.widthAnchor.constraint(equalToConstant: 270).isActive = true
+        row.addArrangedSubview(slider)
+
+        let percent = Int((current * 100).rounded())
+        let valueLabel = label("\(percent)%", font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+        valueLabel.alignment = .right
+        valueLabel.widthAnchor.constraint(equalToConstant: 54).isActive = true
+        slider.valueLabel = valueLabel
+        row.addArrangedSubview(valueLabel)
+
+        section.addArrangedSubview(labeledRow("亮度", control: row))
     }
 
     private func addRecoverableDisplays(to stack: NSStackView) {
@@ -1016,25 +1275,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         section.addArrangedSubview(labeledRow("刷新率", control: refreshPopup))
 
-        let currentExactModes = modes.filter {
-            $0.resolution == display.resolution && $0.hertz == display.hertz
-        }
-        let colorDepthSourceModes = currentExactModes.isEmpty ? sourceModes : currentExactModes
-        let listedColorDepths = Set(colorDepthSourceModes.compactMap(\.colorDepth))
-        var colorDepths = listedColorDepths
-        if let contextualID = display.contextualID,
-           hdr.supports(displayID: contextualID) {
-            colorDepths.insert(10)
-        }
+        let configuredDepth = reportedColorDepth(display).map { "\($0)-bit" }
         let colorDepthPopup = popUpButton(
             title: "颜色位数",
-            options: colorDepths.sorted(by: >).map {
-                let title = $0 == 10 && listedColorDepths.contains(10) == false ? "10-bit（尝试）" : "\($0)-bit"
-                return (title, MenuAction.displayColorDepth(display, $0), true)
-            },
-            selectedTitle: display.colorDepth.map { "\($0)-bit" }
+            options: [
+                ("8-bit", MenuAction.displayColorDepth(display, 8), true),
+                ("10-bit", MenuAction.displayColorDepth(display, 10), true)
+            ],
+            selectedTitle: configuredDepth
         )
         section.addArrangedSubview(labeledRow("颜色位数", control: colorDepthPopup))
+
+        let graphicsDepth = display.graphicsColorDepth
+            .map { "\($0)-bit" } ?? display.colorDepth.map(colorDepthTitle) ?? "未知"
+        section.addArrangedSubview(labeledRow(
+            "图形位深",
+            control: label(graphicsDepth, font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+        ))
+
+        let linkDepth = display.linkDescription?.title ?? "未知"
+        section.addArrangedSubview(labeledRow(
+            "链路位深",
+            control: label(linkDepth, font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
+        ))
     }
 
     private func addToggleControls(for display: DisplayInfo, to section: NSStackView) {
@@ -1337,12 +1600,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         if displays.isEmpty {
+            let linkDescriptions = windowServerLinkDescriptions()
             displays = onlineIDs.map { displayID in
                 let cached = knownDisplays.first { $0.contextualID == displayID }
                 let currentMode = CGDisplayCopyDisplayMode(displayID)
                 let resolution = currentMode.map { "\($0.width)x\($0.height)" } ?? cached?.resolution
                 let hertz = currentMode.flatMap(Self.refreshRate) ?? cached?.hertz
                 let scaling = currentMode.map(Self.scalingState) ?? cached?.scaling
+                let graphicsColorDepth = currentMode.flatMap(Self.graphicsColorDepth)
                 return DisplayInfo(
                     persistentID: cached?.persistentID ?? "\(displayID)",
                     contextualID: displayID,
@@ -1354,6 +1619,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     scaling: scaling,
                     origin: cached?.origin,
                     rotation: cached?.rotation ?? 0,
+                    graphicsColorDepth: graphicsColorDepth ?? cached?.graphicsColorDepth,
+                    linkDescription: cached.flatMap { linkDescriptions[$0.persistentID] } ?? cached?.linkDescription,
                     enabled: true,
                     isMain: CGDisplayIsMain(displayID) != 0,
                     online: true,
@@ -1373,6 +1640,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 displays[index].resolution = "\(currentMode.width)x\(currentMode.height)"
                 displays[index].hertz = Self.refreshRate(currentMode) ?? displays[index].hertz
                 displays[index].scaling = Self.scalingState(currentMode)
+                displays[index].graphicsColorDepth = Self.graphicsColorDepth(currentMode)
             }
             let modes = coreGraphicsModes(for: displayID, currentMode: currentMode, colorDepth: displays[index].colorDepth ?? 8)
             if modes.isEmpty == false {
@@ -1381,6 +1649,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             displays[index].online = true
             displays[index].enabled = true
             displays[index].isMain = CGDisplayIsMain(displayID) != 0
+        }
+
+        let linkDescriptions = windowServerLinkDescriptions()
+        for index in displays.indices {
+            if let linkDescription = linkDescriptions[displays[index].persistentID] {
+                displays[index].linkDescription = linkDescription
+            }
         }
 
         return displays
@@ -1431,6 +1706,119 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
 
     private static func scalingState(_ mode: CGDisplayMode) -> String {
         mode.pixelWidth > mode.width || mode.pixelHeight > mode.height ? "on" : "off"
+    }
+
+    private func reportedColorDepth(_ display: DisplayInfo) -> Int? {
+        if let linkDepth = display.linkDescription?.bitDepth {
+            return linkDepth
+        }
+        if let graphicsDepth = display.graphicsColorDepth {
+            return graphicsDepth
+        }
+        if let colorDepth = display.colorDepth {
+            return presentedColorDepth(colorDepth)
+        }
+        return nil
+    }
+
+    private func displayPlacerColorDepth(for requestedColorDepth: Int, display: DisplayInfo) -> Int {
+        if requestedColorDepth == 8,
+           let rawColorDepth = display.colorDepth,
+           presentedColorDepth(rawColorDepth) == 8 {
+            return rawColorDepth
+        }
+        return requestedColorDepth
+    }
+
+    private static func graphicsColorDepth(_ mode: CGDisplayMode) -> Int? {
+        guard let encoding = mode.pixelEncoding as String? else {
+            return nil
+        }
+
+        let red = encoding.filter { $0 == "R" }.count
+        let green = encoding.filter { $0 == "G" }.count
+        let blue = encoding.filter { $0 == "B" }.count
+        let components = [red, green, blue].filter { $0 > 0 }
+        guard components.count == 3 else {
+            return nil
+        }
+
+        return components.min()
+    }
+
+    private func windowServerLinkDescriptions() -> [String: DisplayLinkDescription] {
+        var descriptions: [String: DisplayLinkDescription] = [:]
+
+        for url in windowServerDisplayPreferenceURLs() {
+            guard let data = try? Data(contentsOf: url),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) else {
+                continue
+            }
+            collectLinkDescriptions(from: plist, into: &descriptions)
+        }
+
+        return descriptions
+    }
+
+    private func windowServerDisplayPreferenceURLs() -> [URL] {
+        var urls: [URL] = []
+        let fileManager = FileManager.default
+        let byHostURL = fileManager.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Preferences/ByHost")
+        if let files = try? fileManager.contentsOfDirectory(at: byHostURL, includingPropertiesForKeys: nil) {
+            urls.append(contentsOf: files.filter {
+                $0.lastPathComponent.hasPrefix("com.apple.windowserver.displays.") &&
+                    $0.pathExtension == "plist"
+            }.sorted { $0.path < $1.path })
+        }
+
+        urls.append(URL(fileURLWithPath: "/Library/Preferences/com.apple.windowserver.displays.plist"))
+        return urls
+    }
+
+    private func collectLinkDescriptions(from object: Any, into descriptions: inout [String: DisplayLinkDescription]) {
+        if let dictionary = object as? [String: Any] {
+            if let uuid = dictionary["UUID"] as? String,
+               let link = dictionary["LinkDescription"] as? [String: Any],
+               descriptions[uuid] == nil {
+                let description = DisplayLinkDescription(
+                    bitDepth: intValue(link["BitDepth"]),
+                    pixelEncoding: intValue(link["PixelEncoding"]),
+                    eotf: intValue(link["EOTF"]),
+                    range: intValue(link["Range"])
+                )
+                if description.bitDepth != nil ||
+                    description.pixelEncoding != nil ||
+                    description.eotf != nil ||
+                    description.range != nil {
+                    descriptions[uuid] = description
+                }
+            }
+
+            for value in dictionary.values {
+                collectLinkDescriptions(from: value, into: &descriptions)
+            }
+            return
+        }
+
+        if let array = object as? [Any] {
+            for value in array {
+                collectLinkDescriptions(from: value, into: &descriptions)
+            }
+        }
+    }
+
+    private func intValue(_ value: Any?) -> Int? {
+        if let int = value as? Int {
+            return int
+        }
+        if let number = value as? NSNumber {
+            return number.intValue
+        }
+        if let string = value as? String {
+            return Int(string)
+        }
+        return nil
     }
 
     private func rebuildMenu() {
@@ -1591,6 +1979,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         currentItem.isEnabled = false
         menu.addItem(currentItem)
 
+        let graphicsDepth = display.graphicsColorDepth
+            .map { "\($0)-bit" } ?? display.colorDepth.map(colorDepthTitle) ?? "未知"
+        let graphicsItem = NSMenuItem(title: "图形位深：\(graphicsDepth)", action: nil, keyEquivalent: "")
+        graphicsItem.isEnabled = false
+        menu.addItem(graphicsItem)
+
+        let linkDepth = display.linkDescription?.title ?? "未知"
+        let linkItem = NSMenuItem(title: "链路位深：\(linkDepth)", action: nil, keyEquivalent: "")
+        linkItem.isEnabled = false
+        menu.addItem(linkItem)
+
         addResolutionItems(for: display, modes: menuModes, to: menu)
         addRefreshRateItems(for: display, modes: menuModes, to: menu)
         addHiDPIItem(for: display, to: menu)
@@ -1604,8 +2003,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         if let hertz = display.hertz {
             parts.append("\(hertz)Hz")
         }
-        if let colorDepth = display.colorDepth {
-            parts.append("\(colorDepth)-bit")
+        if let graphicsColorDepth = display.graphicsColorDepth {
+            parts.append("\(graphicsColorDepth)-bit")
+        } else if let colorDepth = display.colorDepth {
+            parts.append(colorDepthTitle(colorDepth))
         }
         if display.scaling == "on" {
             parts.append("HiDPI")
@@ -2047,7 +2448,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             return
         }
 
-        let mode = bestMode(for: display, colorDepth: colorDepth)
+        do {
+            try connectionMode.setBitDepth(colorDepth, display: display)
+        } catch {
+            showAlert(title: "颜色位数设置失败", message: error.localizedDescription)
+            return
+        }
+
         let displays = activeDisplays.isEmpty ? [display] : activeDisplays
         let arguments = displays.map { current -> String in
             if current.persistentID == display.persistentID {
@@ -2055,9 +2462,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     for: current,
                     origin: current.origin ?? "(0,0)",
                     forceMain: current.isMain,
-                    resolutionOverride: mode?.resolution ?? current.resolution,
-                    hertzOverride: mode?.hertz ?? current.hertz,
-                    colorDepthOverride: colorDepth,
+                    resolutionOverride: current.resolution,
+                    hertzOverride: current.hertz,
+                    colorDepthOverride: current.colorDepth,
                     scalingOverride: current.scaling
                 )
             }
@@ -2069,11 +2476,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 return
             }
             let updated = self.onlineDisplays.first { $0.persistentID == display.persistentID }
-            if updated?.colorDepth != colorDepth {
-                let actual = updated?.colorDepth.map { "\($0)-bit" } ?? "未知"
+            let actual = updated?.linkDescription?.bitDepth
+            if actual != colorDepth {
                 self.showAlert(
-                    title: "\(colorDepth)-bit 未生效",
-                    message: "命令已发送，但刷新后系统仍报告 \(actual)。这通常表示 macOS 或当前线缆/刷新率/HDR 组合没有接受这个颜色位数。"
+                    title: "\(colorDepthTitle(colorDepth)) 未生效",
+                    message: "connectionMode 已写入，但刷新后系统配置仍报告 \(actual.map { "\($0)-bit" } ?? "未知")。这表示 macOS 没有接受当前链路/刷新率/HDR 组合下的位深配置。"
                 )
             }
         }
@@ -2122,6 +2529,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         runDisplayConfiguration(title: enabled ? "开启 HiDPI" : "关闭 HiDPI", arguments: arguments)
+    }
+
+    private func performDisplayBrightness(_ value: Float, display: DisplayInfo) {
+        guard display.online, display.enabled == true, let displayID = display.contextualID else {
+            showAlert(title: "亮度设置失败", message: "目标屏幕当前不在线。")
+            return
+        }
+
+        do {
+            try brightness.setBrightness(value, displayID: displayID)
+        } catch {
+            showAlert(title: "亮度设置失败", message: error.localizedDescription)
+            rebuildPopover(restoring: currentPopoverScrollOrigin())
+        }
     }
 
     private func performDisplayMode(_ mode: DisplayMode, display: DisplayInfo) {

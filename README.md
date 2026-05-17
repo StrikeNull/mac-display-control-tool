@@ -108,7 +108,6 @@ statusbar-tool/build/DisplayBar.app
 输出文件：
 
 ```text
-dist/DisplayBar.dmg
 dist/DisplayBar-0.1.0.dmg
 ```
 
