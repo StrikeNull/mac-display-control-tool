@@ -48,4 +48,6 @@ if [[ -x "$SCRIPT_DIR/../bin/displayplacer-patched" ]]; then
   cp "$SCRIPT_DIR/../bin/displayplacer-patched" "$RESOURCES_DIR/displayplacer-patched"
 fi
 
+codesign --force --deep --sign - "$APP_DIR"
+
 echo "$APP_DIR"
