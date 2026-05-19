@@ -33,6 +33,8 @@ DisplayBar 是一个 macOS 状态栏显示器控制工具，用来快速管理�
 ## 功能
 
 - 状态栏 popover 界面，修改设置时不会因为点击控件就自动关闭。
+- 菜单栏固定显示 `DB` 入口，避免后台运行但入口不可见。
+- 支持开机启动。
 - 展示当前在线屏幕。
 - 通过 `displayplacer` 开启或关闭屏幕。
 - 对被关闭或离线的历史屏幕提供恢复入口。
@@ -41,7 +43,8 @@ DisplayBar 是一个 macOS 状态栏显示器控制工具，用来快速管理�
   - 分辨率
   - 刷新率
   - HiDPI 缩放
-  - 颜色位数，包括 HDR 可用时的 `10-bit（尝试）`
+  - 基于 connection mode 的颜色位数
+- 读取并调节 macOS 暴露的软件亮度。
 - 通过 macOS 私有显示 API 按屏幕开启或关闭 HDR。
 - 设置主屏幕。
 - 切换屏幕模式：
@@ -199,14 +202,15 @@ DisplayBar 会优先读取与当前屏幕绑定的 ColorSync profile，并把当
 
 ## 10-bit 颜色位数
 
-DisplayBar 会显示 `displayplacer` 当前读到的颜色位数。
+DisplayBar 会同时显示图形位深和链路位深。图形位深来自 macOS 当前图形模式，
+链路位深来自 WindowServer 的 `LinkDescription.BitDepth`。
 
-有些屏幕和线缆组合在底层看起来支持 10-bit，但 `displayplacer list` 仍然只列出
-`color_depth:8` 的模式。对于支持 HDR 的屏幕，DisplayBar 会显示 `10-bit（尝试）`。
-选择后会通过 `displayplacer` 发送 `color_depth:10`，然后刷新并读取结果。
+Apple Silicon 上 `displayplacer list` 可能只列出 `color_depth:8`，但底层链路仍然可以是
+10-bit。DisplayBar 的颜色位数下拉会写入 connection mode 对应的链路位深，而不是只发送
+`displayplacer color_depth:10`。
 
-只有 macOS 读回 `Color Depth: 10` 时，才应该认为 10-bit 真正生效。如果读回仍是 `8`，
-说明当前 macOS、线缆、刷新率、HDR 或屏幕组合没有接受 10-bit 请求。
+只有 macOS 读回链路位深为 `10-bit` 时，才应该认为 10-bit 链路真正生效。如果读回仍是
+`8-bit`，说明当前 macOS、线缆、刷新率、HDR 或屏幕组合没有接受 10-bit 请求。
 
 ## 远程桌面注意事项
 

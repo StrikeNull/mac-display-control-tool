@@ -1,6 +1,7 @@
 import AppKit
 import ColorSync
 import CoreGraphics
+import Darwin
 import Foundation
 
 @_silgen_name("CoreDisplay_Display_SupportsHDRMode")
@@ -606,6 +607,54 @@ final class ConnectionModeController {
     }
 }
 
+final class LaunchAtLoginController {
+    private let label = "local.display-control-tool.DisplayBar.login"
+
+    private var launchAgentURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/LaunchAgents")
+            .appendingPathComponent("\(label).plist")
+    }
+
+    func isEnabled() -> Bool {
+        guard let plist = NSDictionary(contentsOf: launchAgentURL) as? [String: Any],
+              plist["Label"] as? String == label,
+              let arguments = plist["ProgramArguments"] as? [String] else {
+            return false
+        }
+        return arguments.contains(Bundle.main.bundlePath)
+    }
+
+    func setEnabled(_ enabled: Bool) throws {
+        if enabled {
+            try enable()
+        } else {
+            try disable()
+        }
+    }
+
+    private func enable() throws {
+        let directory = launchAgentURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+        let plist: [String: Any] = [
+            "Label": label,
+            "ProgramArguments": ["/usr/bin/open", "-gj", Bundle.main.bundlePath],
+            "RunAtLoad": true
+        ]
+        let data = try PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+        try data.write(to: launchAgentURL, options: .atomic)
+    }
+
+    private func disable() throws {
+        let uid = getuid()
+        _ = try? Shell.run("/bin/launchctl", ["bootout", "gui/\(uid)", launchAgentURL.path], timeout: 5)
+        if FileManager.default.fileExists(atPath: launchAgentURL.path) {
+            try FileManager.default.removeItem(at: launchAgentURL)
+        }
+    }
+}
+
 final class ColorProfileController {
     let helperPath: String
 
@@ -783,6 +832,7 @@ final class ColorProfileController {
 
 enum MenuAction {
     case refresh
+    case launchAtLogin(Bool)
     case projection(DisplayProjectionMode)
     case arrangement(DisplayArrangement)
     case openDisplayArrangementSettings
@@ -871,6 +921,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private let hdr = HDRController()
     private let brightness = BrightnessController()
     private let connectionMode = ConnectionModeController()
+    private let launchAtLogin = LaunchAtLoginController()
     private var colorProfiles: ColorProfileController!
     private var displayPlacer: DisplayPlacer!
     private var projectRoot: URL!
@@ -888,10 +939,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         displayPlacer = DisplayPlacer(executable: displayplacerPath)
         colorProfiles = ColorProfileController(helperPath: Self.bundledResource("profilectl")?.path ?? projectRoot.appendingPathComponent("statusbar-tool/build/profilectl").path)
 
-        statusItem.button?.title = "▣"
-        statusItem.button?.toolTip = "Display Bar"
-        statusItem.button?.target = self
-        statusItem.button?.action = #selector(togglePopover(_:))
+        configureStatusItemButton()
         popover.behavior = .applicationDefined
         popover.animates = true
         popover.delegate = self
@@ -899,6 +947,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         loadKnownDisplays()
         refreshDisplays(showErrors: false)
         rebuildMenu()
+    }
+
+    private func configureStatusItemButton() {
+        guard let button = statusItem.button else {
+            return
+        }
+        button.title = "DB"
+        button.font = .boldSystemFont(ofSize: NSFont.systemFontSize)
+        button.toolTip = "DisplayBar"
+        button.target = self
+        button.action = #selector(togglePopover(_:))
     }
 
     @objc private func togglePopover(_ sender: Any?) {
@@ -989,6 +1048,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         case .refresh:
             refreshDisplays(showErrors: true)
             rebuildMenu()
+        case .launchAtLogin(let enabled):
+            performLaunchAtLogin(enabled)
         case .projection(let mode):
             performProjectionMode(mode)
         case .arrangement(let arrangement):
@@ -1142,6 +1203,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         )
         section.addArrangedSubview(labeledRow("屏幕排列", control: arrangement))
         section.addArrangedSubview(actionButton("屏幕排列（系统配置）", action: .openDisplayArrangementSettings))
+
+        let startsAtLogin = launchAtLogin.isEnabled()
+        section.addArrangedSubview(checkbox("开机启动", checked: startsAtLogin, action: .launchAtLogin(!startsAtLogin)))
 
         stack.addArrangedSubview(box)
     }
@@ -1824,7 +1888,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func rebuildMenu() {
         statusItem.menu = nil
         let activeCount = activeDisplays.count
-        statusItem.button?.title = activeCount > 1 ? "▣ \(activeCount)" : "▣"
+        statusItem.button?.title = activeCount > 1 ? "DB \(activeCount)" : "DB"
         if popover.isShown {
             rebuildPopover(restoring: currentPopoverScrollOrigin())
         }
@@ -1882,7 +1946,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         addItem("退出", action: .quit, to: menu)
 
         statusItem.menu = menu
-        statusItem.button?.title = onlineDisplays.count > 1 ? "▣ \(onlineDisplays.count)" : "▣"
+        statusItem.button?.title = onlineDisplays.count > 1 ? "DB \(onlineDisplays.count)" : "DB"
     }
 
     private func currentPopoverScrollOrigin() -> NSPoint? {
@@ -2346,6 +2410,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             return nil
         }
         return (x, y)
+    }
+
+    private func performLaunchAtLogin(_ enabled: Bool) {
+        do {
+            try launchAtLogin.setEnabled(enabled)
+            rebuildPopover(restoring: currentPopoverScrollOrigin())
+        } catch {
+            showAlert(title: "开机启动设置失败", message: error.localizedDescription)
+            rebuildPopover(restoring: currentPopoverScrollOrigin())
+        }
     }
 
     private func performDisplayEnable(_ enabled: Bool, display: DisplayInfo) {

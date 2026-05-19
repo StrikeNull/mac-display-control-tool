@@ -92,13 +92,12 @@ ColorSync profiles:
 
 ## Implementation Notes
 
-- Display layout, resolution, refresh rate, HiDPI, color depth, and enable/disable
+- Display layout, resolution, refresh rate, HiDPI, and enable/disable
   actions are sent through `displayplacer`.
+- Color depth writes WindowServer connection-mode link depth on Apple Silicon.
+- Launch at login is implemented with a per-user `LaunchAgent`.
 - HDR uses private macOS APIs and verifies the state after toggling.
 - Color profiles use ColorSync device APIs via `profilectl`.
-- `10-bit（尝试）` is shown for HDR-capable displays even when `displayplacer`
-  only lists 8-bit modes. The app sends `color_depth:10`, then reads the mode
-  back. If macOS still reports 8-bit, the app reports that 10-bit did not take.
 
 ## Warnings
 

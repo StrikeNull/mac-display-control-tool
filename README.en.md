@@ -35,6 +35,8 @@ arrangement panel when manual layout is needed.
 ## Features
 
 - Menu bar popover UI that stays open while changing settings.
+- Always shows a `DB` menu bar entry so the app is visible when running.
+- Supports launch at login.
 - List currently active displays.
 - Enable or disable a display through `displayplacer`.
 - Recover a disabled/offline display through a patched rescue binary.
@@ -42,7 +44,8 @@ arrangement panel when manual layout is needed.
   - resolution
   - refresh rate
   - HiDPI scaling
-  - color depth, including a 10-bit attempt option when HDR is supported
+  - connection-mode based color depth
+- Read and adjust software brightness when macOS exposes it.
 - Toggle HDR per display through macOS private display APIs.
 - Set the main display.
 - Switch screen mode:
@@ -194,17 +197,18 @@ for a clearer label.
 
 ## 10-bit Color Depth
 
-DisplayBar shows the current color depth reported by `displayplacer`.
+DisplayBar shows both graphics color depth and link color depth. Graphics depth
+comes from the current macOS graphics mode, while link depth comes from
+WindowServer `LinkDescription.BitDepth`.
 
-Some displays and links report 10-bit capability through lower-level system
-data, but `displayplacer list` may still expose only `color_depth:8` modes.
-For HDR-capable displays, DisplayBar can show `10-bit（尝试）`. Selecting it sends
-`color_depth:10` through `displayplacer`, then refreshes and checks the reported
-state.
+On Apple Silicon, `displayplacer list` may expose only `color_depth:8` even when
+the underlying link can run at 10-bit. DisplayBar's color-depth selector writes
+the connection-mode link depth instead of only sending `displayplacer
+color_depth:10`.
 
-10-bit should be considered active only if macOS reads back `Color Depth: 10`.
-If it reads back `8`, macOS or the current cable/refresh-rate/HDR combination
-did not accept the 10-bit request.
+10-bit should be considered active only if macOS reads back a `10-bit` link
+depth. If it still reads back `8-bit`, the current macOS, cable, refresh rate,
+HDR state, or display combination did not accept the 10-bit request.
 
 ## Repository Layout
 
