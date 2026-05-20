@@ -87,6 +87,7 @@ struct DisplayInfo: Codable, Equatable {
     var rotation: Int?
     var graphicsColorDepth: Int?
     var linkDescription: DisplayLinkDescription?
+    var isBuiltin: Bool?
     var enabled: Bool?
     var isMain: Bool
     var online: Bool = true
@@ -350,6 +351,7 @@ final class DisplayPlacer {
                     rotation: nil,
                     graphicsColorDepth: nil,
                     linkDescription: nil,
+                    isBuiltin: false,
                     enabled: nil,
                     isMain: false,
                     modes: []
@@ -1235,9 +1237,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         let powerRow = horizontalStack(spacing: 8)
-        powerRow.addArrangedSubview(actionButton("开启屏幕", action: .enable(display), enabled: display.online == false || display.enabled != true))
-        powerRow.addArrangedSubview(actionButton("关闭屏幕", action: .disable(display), enabled: display.online && enabledDisplayCount > 1))
-        if display.online == false && FileManager.default.isExecutableFile(atPath: patchedPath.path) {
+        let canPowerControl = display.isBuiltin != true
+        powerRow.addArrangedSubview(actionButton("开启屏幕", action: .enable(display), enabled: canPowerControl && (display.online == false || display.enabled != true)))
+        powerRow.addArrangedSubview(actionButton("关闭屏幕", action: .disable(display), enabled: canPowerControl && display.online && enabledDisplayCount > 1))
+        if canPowerControl, display.online == false && FileManager.default.isExecutableFile(atPath: patchedPath.path) {
             powerRow.addArrangedSubview(actionButton("救援开启", action: .rescue(display)))
         }
         section.addArrangedSubview(powerRow)
@@ -1691,6 +1694,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     rotation: cached?.rotation ?? 0,
                     graphicsColorDepth: graphicsColorDepth ?? cached?.graphicsColorDepth,
                     linkDescription: cached.flatMap { linkDescriptions[$0.persistentID] } ?? cached?.linkDescription,
+                    isBuiltin: CGDisplayIsBuiltin(displayID) != 0 || cached?.isBuiltin == true,
                     enabled: true,
                     isMain: CGDisplayIsMain(displayID) != 0,
                     online: true,
@@ -1719,9 +1723,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             displays[index].online = true
             displays[index].enabled = true
             displays[index].isMain = CGDisplayIsMain(displayID) != 0
+            displays[index].isBuiltin = CGDisplayIsBuiltin(displayID) != 0 || displays[index].isBuiltin == true
+            if displays[index].isBuiltin == true, displays[index].type.isEmpty || displays[index].type.lowercased().contains("external") {
+                displays[index].type = "内置显示器"
+            }
         }
 
+        let knownContextualIDs = Set(displays.compactMap(\.contextualID))
         let linkDescriptions = windowServerLinkDescriptions()
+        for displayID in onlineIDs where knownContextualIDs.contains(displayID) == false {
+            let cached = knownDisplays.first { $0.contextualID == displayID }
+            let currentMode = CGDisplayCopyDisplayMode(displayID)
+            let resolution = currentMode.map { "\($0.width)x\($0.height)" } ?? cached?.resolution
+            let hertz = currentMode.flatMap(Self.refreshRate) ?? cached?.hertz
+            let scaling = currentMode.map(Self.scalingState) ?? cached?.scaling
+            let graphicsColorDepth = currentMode.flatMap(Self.graphicsColorDepth)
+            let isBuiltin = CGDisplayIsBuiltin(displayID) != 0 || cached?.isBuiltin == true
+            let persistentID = cached?.persistentID ?? "\(displayID)"
+            displays.append(DisplayInfo(
+                persistentID: persistentID,
+                contextualID: displayID,
+                serialID: cached?.serialID,
+                type: cached?.type ?? (isBuiltin ? "内置显示器" : "Display \(displayID)"),
+                resolution: resolution,
+                hertz: hertz,
+                colorDepth: cached?.colorDepth ?? graphicsColorDepth ?? 8,
+                scaling: scaling,
+                origin: cached?.origin,
+                rotation: cached?.rotation ?? 0,
+                graphicsColorDepth: graphicsColorDepth ?? cached?.graphicsColorDepth,
+                linkDescription: linkDescriptions[persistentID] ?? cached?.linkDescription,
+                isBuiltin: isBuiltin,
+                enabled: true,
+                isMain: CGDisplayIsMain(displayID) != 0,
+                online: true,
+                modes: coreGraphicsModes(for: displayID, currentMode: currentMode, colorDepth: cached?.colorDepth ?? graphicsColorDepth ?? 8)
+            ))
+        }
+
         for index in displays.indices {
             if let linkDescription = linkDescriptions[displays[index].persistentID] {
                 displays[index].linkDescription = linkDescription
@@ -1926,11 +1965,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                 submenu.addItem(detail)
                 submenu.addItem(.separator())
 
-                addItem("开启屏幕", action: .enable(display), to: submenu, enabled: display.online == false || display.enabled != true)
-                addItem("关闭屏幕", action: .disable(display), to: submenu, enabled: display.online && enabledDisplayCount > 1)
+                let canPowerControl = display.isBuiltin != true
+                addItem("开启屏幕", action: .enable(display), to: submenu, enabled: canPowerControl && (display.online == false || display.enabled != true))
+                addItem("关闭屏幕", action: .disable(display), to: submenu, enabled: canPowerControl && display.online && enabledDisplayCount > 1)
                 addItem("设为主屏幕", action: .makeMain(display), to: submenu, enabled: display.online && display.enabled == true && display.isMain == false)
 
-                if display.online == false && FileManager.default.isExecutableFile(atPath: patchedPath.path) {
+                if canPowerControl, display.online == false && FileManager.default.isExecutableFile(atPath: patchedPath.path) {
                     addItem("救援开启这个屏幕", action: .rescue(display), to: submenu)
                 }
 
@@ -2429,6 +2469,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func performDisplayEnable(_ enabled: Bool, display: DisplayInfo) {
+        if display.isBuiltin == true {
+            showAlert(title: enabled ? "开启屏幕失败" : "关闭屏幕失败", message: "内置显示器不提供屏幕开关控制。")
+            return
+        }
+
         var outputs: [String] = []
 
         do {

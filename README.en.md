@@ -38,6 +38,7 @@ arrangement panel when manual layout is needed.
 - Always shows a `DB` menu bar entry so the app is visible when running.
 - Supports launch at login.
 - List currently active displays.
+- Built-in displays are shown and can use supported mode controls, but do not expose power/rescue controls.
 - Enable or disable a display through `displayplacer`.
 - Recover a disabled/offline display through a patched rescue binary.
 - Set display mode:
