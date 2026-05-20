@@ -16,8 +16,10 @@ DisplayBar 是一个 macOS 状态栏显示器控制工具，用来快速管理�
 
 打开 DMG 后，把 `DisplayBar.app` 拖到 `Applications` 即可。
 
-当前 App 没有签名和 notarize。首次打开时 macOS 可能会拦截。如果你信任这个开源项目，
-可以在“系统设置 > 隐私与安全性”里允许打开，或右键 App 选择“打开”。
+当前 App 使用 ad-hoc 签名，已经避免 App bundle 签名结构损坏，但还没有使用 Apple
+Developer ID 签名和 notarize。首次打开时 macOS 仍可能会拦截。如果你信任这个开源项目，
+可以在“系统设置 > 隐私与安全性”里允许打开，或右键 App 选择“打开”。通常不需要执行命令；
+如果被下载工具额外加了隔离属性，才可能需要手动移除 quarantine。
 
 ## 适合谁
 
@@ -243,7 +245,8 @@ ToDesk、Moonlight 等远程桌面工具可能影响 macOS 的显示器枚举和
 
 ## 已知限制
 
-- 当前项目主要用于个人 macOS 多屏实验，不是完整签名分发的软件。
+- 当前项目主要用于个人 macOS 多屏实验，App 使用 ad-hoc 签名，但还不是 Developer ID
+  签名和 notarize 的完整分发软件。
 - HDR 使用私有 API，未来 macOS 版本可能失效。
 - 屏幕开启、关闭和恢复行为依赖 macOS、屏幕固件、线缆、扩展坞和 `displayplacer`。
 - 10-bit 是否生效必须以 macOS 读回值为准。

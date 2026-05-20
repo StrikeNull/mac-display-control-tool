@@ -16,9 +16,13 @@ The latest usable build is available from GitHub Releases:
 
 Open the DMG, then drag `DisplayBar.app` to `Applications`.
 
-The app is not signed or notarized. On first launch, macOS may block it with a
-Gatekeeper warning. If you trust this open-source build, open System Settings >
-Privacy & Security and allow the app, or right-click the app and choose Open.
+The app uses ad-hoc signing, so the app bundle signature is structurally valid,
+but it is not signed with an Apple Developer ID or notarized. On first launch,
+macOS may still block it with a Gatekeeper warning. If you trust this open-source
+build, open System Settings > Privacy & Security and allow the app, or
+right-click the app and choose Open. A terminal command is usually not required;
+only manually remove quarantine if your download tool added extra quarantine
+metadata.
 
 ## Who It Is For
 
@@ -232,8 +236,8 @@ HDR state, or display combination did not accept the 10-bit request.
 
 ## Known Limitations
 
-- The app is tailored for local macOS display experiments, not a polished
-  signed distribution.
+- The app is tailored for local macOS display experiments. It uses ad-hoc
+  signing, but is not a fully Developer ID signed and notarized distribution.
 - HDR uses private APIs and may break on future macOS versions.
 - Display enable/disable behavior depends heavily on macOS, display firmware,
   cable, dock, and `displayplacer`.
