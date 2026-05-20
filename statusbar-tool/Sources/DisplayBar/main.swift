@@ -930,7 +930,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
 
-    private let displayplacerPath = ProcessInfo.processInfo.environment["DISPLAYPLACER"] ?? "/opt/homebrew/bin/displayplacer"
+    private lazy var displayplacerPath: String = Self.firstExecutablePath([
+        ProcessInfo.processInfo.environment["DISPLAYPLACER"],
+        Self.bundledResource("displayplacer")?.path,
+        Self.bundledResource("displayplacer-patched")?.path,
+        "/opt/homebrew/bin/displayplacer",
+        "/usr/local/bin/displayplacer"
+    ].compactMap { $0 }) ?? "/opt/homebrew/bin/displayplacer"
     private let knownDisplaysKey = "knownDisplays"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -2806,7 +2812,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private var patchedPath: URL {
-        Self.bundledResource("displayplacer-patched") ?? projectRoot.appendingPathComponent("bin/displayplacer-patched")
+        Self.bundledResource("displayplacer-patched") ??
+            Self.bundledResource("displayplacer") ??
+            projectRoot.appendingPathComponent("bin/displayplacer-patched")
+    }
+
+    private static func firstExecutablePath(_ candidates: [String]) -> String? {
+        candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
     }
 
     private func mergedDisplays() -> [DisplayInfo] {

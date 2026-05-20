@@ -46,8 +46,9 @@ open ./statusbar-tool/build/DisplayBar.app
 
 ## Runtime Dependencies
 
-- `/opt/homebrew/bin/displayplacer`
-- `../bin/displayplacer-patched` for rescue wakeups
+- Bundled `DisplayBar.app/Contents/Resources/displayplacer`
+- Bundled `DisplayBar.app/Contents/Resources/displayplacer-patched` for rescue wakeups
+- Homebrew `displayplacer` fallback at `/opt/homebrew/bin/displayplacer` or `/usr/local/bin/displayplacer`
 - macOS AppKit, CoreGraphics, CoreDisplay/SkyLight private symbols, and ColorSync
 
 Set a custom `displayplacer` path:

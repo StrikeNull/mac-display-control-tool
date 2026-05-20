@@ -46,8 +46,11 @@ cp "$SCRIPT_DIR/build/profilectl" "$RESOURCES_DIR/profilectl"
 cp "$SCRIPT_DIR/build/hdrctl" "$RESOURCES_DIR/hdrctl"
 if [[ -x "$SCRIPT_DIR/../bin/displayplacer-patched" ]]; then
   cp "$SCRIPT_DIR/../bin/displayplacer-patched" "$RESOURCES_DIR/displayplacer-patched"
+  cp "$SCRIPT_DIR/../bin/displayplacer-patched" "$RESOURCES_DIR/displayplacer"
+  chmod +x "$RESOURCES_DIR/displayplacer-patched" "$RESOURCES_DIR/displayplacer"
 fi
 
+xattr -cr "$APP_DIR"
 codesign --force --deep --sign - "$APP_DIR"
 
 echo "$APP_DIR"

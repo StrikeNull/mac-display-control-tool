@@ -65,15 +65,11 @@ arrangement panel when manual layout is needed.
 
 - macOS.
 - Apple Silicon or Intel Mac with external display support.
-- Homebrew `displayplacer` at `/opt/homebrew/bin/displayplacer`, or set
-  `DISPLAYPLACER` to another path.
 - Xcode command line tools for building the Swift app and C helpers.
 
-Install `displayplacer`:
-
-```zsh
-brew install displayplacer
-```
+The downloadable app prefers the bundled `displayplacer`. Source builds look in
+this order: `DISPLAYPLACER`, app Resources, `/opt/homebrew/bin/displayplacer`,
+and `/usr/local/bin/displayplacer`.
 
 ## Build
 

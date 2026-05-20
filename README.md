@@ -64,16 +64,11 @@ DisplayBar 是一个 macOS 状态栏显示器控制工具，用来快速管理�
 
 - macOS。
 - 支持外接屏幕的 Apple Silicon 或 Intel Mac。
-- Homebrew 安装的 `displayplacer`，默认路径为 `/opt/homebrew/bin/displayplacer`。
 - 构建时需要 Xcode Command Line Tools。
 
-安装 `displayplacer`：
-
-```zsh
-brew install displayplacer
-```
-
-如果你的 `displayplacer` 不在默认路径，可以通过环境变量指定：
+下载版会优先使用 App 内置的 `displayplacer`。源码运行时会按顺序查找：
+`DISPLAYPLACER`、App Resources、`/opt/homebrew/bin/displayplacer`、`/usr/local/bin/displayplacer`。
+如果你想指定自己的 `displayplacer`，可以设置环境变量：
 
 ```zsh
 DISPLAYPLACER=/path/to/displayplacer
