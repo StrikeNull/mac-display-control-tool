@@ -935,9 +935,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private lazy var displayplacerPath: String = Self.firstExecutablePath([
         ProcessInfo.processInfo.environment["DISPLAYPLACER"],
         Self.bundledResource("displayplacer")?.path,
-        Self.bundledResource("displayplacer-patched")?.path,
         "/opt/homebrew/bin/displayplacer",
-        "/usr/local/bin/displayplacer"
+        "/usr/local/bin/displayplacer",
+        Self.bundledResource("displayplacer-patched")?.path
     ].compactMap { $0 }) ?? "/opt/homebrew/bin/displayplacer"
     private let knownDisplaysKey = "knownDisplays"
 
@@ -2622,7 +2622,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
                     resolutionOverride: mode.resolution,
                     hertzOverride: mode.hertz ?? current.hertz,
                     colorDepthOverride: mode.colorDepth ?? current.colorDepth,
-                    scalingOverride: current.scaling
+                    scalingOverride: mode.scaling ?? current.scaling
                 )
             }
             return displayConfigArgument(for: current, origin: current.origin ?? "(0,0)", forceMain: current.isMain)

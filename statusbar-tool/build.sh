@@ -46,8 +46,17 @@ cp "$SCRIPT_DIR/build/profilectl" "$RESOURCES_DIR/profilectl"
 cp "$SCRIPT_DIR/build/hdrctl" "$RESOURCES_DIR/hdrctl"
 if [[ -x "$SCRIPT_DIR/../bin/displayplacer-patched" ]]; then
   cp "$SCRIPT_DIR/../bin/displayplacer-patched" "$RESOURCES_DIR/displayplacer-patched"
+  chmod +x "$RESOURCES_DIR/displayplacer-patched"
+fi
+if [[ -x "/opt/homebrew/bin/displayplacer" ]]; then
+  cp "/opt/homebrew/bin/displayplacer" "$RESOURCES_DIR/displayplacer"
+elif [[ -x "/usr/local/bin/displayplacer" ]]; then
+  cp "/usr/local/bin/displayplacer" "$RESOURCES_DIR/displayplacer"
+elif [[ -x "$SCRIPT_DIR/../bin/displayplacer-patched" ]]; then
   cp "$SCRIPT_DIR/../bin/displayplacer-patched" "$RESOURCES_DIR/displayplacer"
-  chmod +x "$RESOURCES_DIR/displayplacer-patched" "$RESOURCES_DIR/displayplacer"
+fi
+if [[ -x "$RESOURCES_DIR/displayplacer" ]]; then
+  chmod +x "$RESOURCES_DIR/displayplacer"
 fi
 
 xattr -cr "$APP_DIR"
