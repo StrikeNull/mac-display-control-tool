@@ -673,6 +673,24 @@ final class ColorProfileController {
         return Self.parseDisplayProfiles(result.stdout)
     }
 
+    func currentProfile(displayID: UInt32) -> DisplayColorProfile? {
+        guard let unmanagedProfile = ColorSyncProfileCreateWithDisplayID(displayID) else {
+            return nil
+        }
+
+        let profile = unmanagedProfile.takeRetainedValue()
+        let description = ColorSyncProfileCopyDescriptionString(profile)?.takeRetainedValue() as String?
+        var unmanagedError: Unmanaged<CFError>?
+        let url = ColorSyncProfileGetURL(profile, &unmanagedError)?.takeUnretainedValue() as URL?
+        return DisplayColorProfile(
+            profileID: "1",
+            name: description ?? url.map { Self.profileName(path: $0.path) } ?? "当前颜色配置",
+            path: url?.path,
+            isCurrent: true,
+            isDefault: true
+        )
+    }
+
     func installedProfiles() -> [ColorProfileOption] {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let roots = [
@@ -710,8 +728,11 @@ final class ColorProfileController {
     func setProfile(_ option: ColorProfileOption, displayIdentifier: String, profileID: String) throws {
         let result = try Shell.run(helperPath, ["set", displayIdentifier, profileID, option.path], timeout: 20)
         guard result.status == 0 else {
+            let output = result.combinedOutput
             throw NSError(domain: "DisplayBar.ColorProfile", code: Int(result.status), userInfo: [
-                NSLocalizedDescriptionKey: result.combinedOutput.isEmpty ? "ColorSync did not accept the selected profile." : result.combinedOutput
+                NSLocalizedDescriptionKey: output.contains("set:failed")
+                    ? "macOS 当前没有向普通应用开放这个显示器的 ColorSync 写入接口。请使用“颜色配置（系统配置）”在系统设置里修改。"
+                    : (output.isEmpty ? "ColorSync did not accept the selected profile." : output)
             ])
         }
     }
@@ -719,8 +740,11 @@ final class ColorProfileController {
     func resetProfile(displayIdentifier: String, profileID: String) throws {
         let result = try Shell.run(helperPath, ["reset", displayIdentifier, profileID], timeout: 20)
         guard result.status == 0 else {
+            let output = result.combinedOutput
             throw NSError(domain: "DisplayBar.ColorProfile", code: Int(result.status), userInfo: [
-                NSLocalizedDescriptionKey: result.combinedOutput.isEmpty ? "ColorSync did not reset the profile." : result.combinedOutput
+                NSLocalizedDescriptionKey: output.contains("set:failed")
+                    ? "macOS 当前没有向普通应用开放这个显示器的 ColorSync 写入接口。请使用“颜色配置（系统配置）”在系统设置里修改。"
+                    : (output.isEmpty ? "ColorSync did not reset the profile." : output)
             ])
         }
     }
@@ -931,6 +955,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private var knownDisplays: [DisplayInfo] = []
     private var localEventMonitor: Any?
     private var globalEventMonitor: Any?
+    private var colorProfileOperationInFlight = false
+    private var alertPresentationInFlight = false
 
     private lazy var displayplacerPath: String = Self.firstExecutablePath([
         ProcessInfo.processInfo.environment["DISPLAYPLACER"],
@@ -990,9 +1016,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     private func startPopoverEventMonitors() {
         stopPopoverEventMonitors()
 
-        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+        localEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { [weak self] event in
             guard let self else {
                 return event
+            }
+            if event.type == .keyDown, event.keyCode == 53 {
+                self.popover.performClose(nil)
+                return nil
             }
             if self.popover.isShown,
                event.window !== self.popover.contentViewController?.view.window,
@@ -1397,6 +1427,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let profileLookup = colorProfileLookup(for: display)
         let currentProfiles = profileLookup.profiles
         let current = currentProfiles.first { $0.isCurrent } ?? currentProfiles.first
+        let canWriteProfiles = colorProfilesCanWrite(for: display)
         let currentName = displayName(forProfileName: current?.name, path: current?.path)
         let currentValue = label(currentName ?? "未知", font: .systemFont(ofSize: 12), color: .secondaryLabelColor)
         section.addArrangedSubview(labeledRow("当前颜色配置", control: currentValue))
@@ -1429,8 +1460,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
             selectedTitle: currentName,
             selectedIndex: selectedIndex
         )
+        profilePopup.isEnabled = canWriteProfiles
         section.addArrangedSubview(labeledRow("颜色配置", control: profilePopup))
-        section.addArrangedSubview(actionButton("恢复默认颜色配置", action: .resetColorProfile(display), enabled: current != nil))
+        if canWriteProfiles {
+            section.addArrangedSubview(actionButton("恢复默认颜色配置", action: .resetColorProfile(display), enabled: current != nil))
+        } else {
+            section.addArrangedSubview(actionButton("颜色配置（系统配置）", action: .openDisplayArrangementSettings, enabled: true))
+        }
     }
 
     private func colorProfileOptions(for display: DisplayInfo, profiles: [DisplayColorProfile]) -> [ColorProfileOption] {
@@ -1470,6 +1506,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
         identifiers.append(display.persistentID)
 
+        if let contextualID = display.contextualID,
+           let current = colorProfiles.currentProfile(displayID: contextualID) {
+            var profiles = colorProfiles.displayProfiles(identifier: "\(contextualID)")
+            profiles.removeAll { profile in
+                if let left = profile.path, let right = current.path {
+                    return (left as NSString).standardizingPath == (right as NSString).standardizingPath
+                }
+                return profile.name == current.name
+            }
+            profiles.insert(current, at: 0)
+            return ("\(contextualID)", profiles)
+        }
+
         for identifier in identifiers {
             let profiles = colorProfiles.displayProfiles(identifier: identifier)
             if profiles.isEmpty == false {
@@ -1478,6 +1527,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
 
         return (identifiers.first ?? display.persistentID, [])
+    }
+
+    private func colorProfilesCanWrite(for display: DisplayInfo) -> Bool {
+        var identifiers: [String] = []
+        if let contextualID = display.contextualID {
+            identifiers.append("\(contextualID)")
+        }
+        identifiers.append(display.persistentID)
+        return identifiers.contains { colorProfiles.displayProfiles(identifier: $0).isEmpty == false }
     }
 
     private func displayName(forProfileName name: String?, path: String?) -> String? {
@@ -2273,16 +2331,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let lookup = colorProfileLookup(for: display)
         let currentProfiles = lookup.profiles
         let current = currentProfiles.first { $0.isCurrent } ?? currentProfiles.first
+        let canWriteProfiles = colorProfilesCanWrite(for: display)
         let currentTitle = current.map { "当前颜色配置：\($0.name)" } ?? "当前颜色配置：未知"
         let currentItem = NSMenuItem(title: currentTitle, action: nil, keyEquivalent: "")
         currentItem.isEnabled = false
         menu.addItem(currentItem)
 
-        addItem("恢复默认颜色配置", action: .resetColorProfile(display), to: menu, enabled: current != nil)
+        if canWriteProfiles {
+            addItem("恢复默认颜色配置", action: .resetColorProfile(display), to: menu, enabled: current != nil)
+        } else {
+            addItem("颜色配置（系统配置）", action: .openDisplayArrangementSettings, to: menu)
+        }
 
         let profileMenuItem = NSMenuItem(title: "选择颜色配置", action: nil, keyEquivalent: "")
         let profileMenu = NSMenu()
         let options = colorProfileOptions(for: display, profiles: currentProfiles)
+        profileMenuItem.isEnabled = canWriteProfiles
 
         if options.isEmpty {
             let empty = NSMenuItem(title: "没有找到 ICC/ICM 文件", action: nil, keyEquivalent: "")
@@ -2411,16 +2475,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         }
     }
 
-    private func confirmProjection(_ mode: DisplayProjectionMode, action: () -> Void) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "切换到\(mode.title)？"
-        alert.informativeText = "这个模式会禁用其中一块屏幕。macOS 重新启用屏幕后可能短暂重排，DisplayBar 会保留救援入口。"
-        alert.addButton(withTitle: "切换")
-        alert.addButton(withTitle: "取消")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            action()
+    private func confirmProjection(_ mode: DisplayProjectionMode, action: @escaping () -> Void) {
+        presentAlert(
+            title: "切换到\(mode.title)？",
+            message: "这个模式会禁用其中一块屏幕。macOS 重新启用屏幕后可能短暂重排，DisplayBar 会保留救援入口。",
+            primaryButton: "切换",
+            secondaryButton: "取消"
+        ) { response in
+            if response == .alertFirstButtonReturn {
+                action()
+            }
         }
     }
 
@@ -2516,15 +2580,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func confirmAndDisable(_ display: DisplayInfo) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "关闭 \(display.title)？"
-        alert.informativeText = "关闭后它可能会从 displayplacer 列表里消失。菜单里保留了补丁版救援入口，但这个动作仍建议谨慎使用。"
-        alert.addButton(withTitle: "关闭")
-        alert.addButton(withTitle: "取消")
-
-        if alert.runModal() == .alertFirstButtonReturn {
-            performDisplayEnable(false, display: display)
+        presentAlert(
+            title: "关闭 \(display.title)？",
+            message: "关闭后它可能会从 displayplacer 列表里消失。菜单里保留了补丁版救援入口，但这个动作仍建议谨慎使用。",
+            primaryButton: "关闭",
+            secondaryButton: "取消"
+        ) { [weak self] response in
+            if response == .alertFirstButtonReturn {
+                self?.performDisplayEnable(false, display: display)
+            }
         }
     }
 
@@ -2735,10 +2799,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let current = lookup.profiles.first { $0.isCurrent } ?? lookup.profiles.first
         let profileID = current?.profileID ?? "1"
 
-        do {
-            try colorProfiles.setProfile(option, displayIdentifier: lookup.identifier, profileID: profileID)
-        } catch {
-            showAlert(title: "颜色配置失败", message: error.localizedDescription)
+        runColorProfileOperation { [self] in
+            try self.colorProfiles.setProfile(option, displayIdentifier: lookup.identifier, profileID: profileID)
         }
     }
 
@@ -2747,10 +2809,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
         let current = lookup.profiles.first { $0.isCurrent } ?? lookup.profiles.first
         let profileID = current?.profileID ?? "1"
 
-        do {
-            try colorProfiles.resetProfile(displayIdentifier: lookup.identifier, profileID: profileID)
-        } catch {
-            showAlert(title: "颜色配置失败", message: error.localizedDescription)
+        runColorProfileOperation { [self] in
+            try self.colorProfiles.resetProfile(displayIdentifier: lookup.identifier, profileID: profileID)
+        }
+    }
+
+    private func runColorProfileOperation(_ operation: @escaping () throws -> Void) {
+        guard colorProfileOperationInFlight == false else {
+            return
+        }
+
+        colorProfileOperationInFlight = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            do {
+                try operation()
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else {
+                        return
+                    }
+                    self.colorProfileOperationInFlight = false
+                    if self.popover.isShown == false {
+                        self.refreshDisplays(showErrors: false)
+                        self.rebuildMenu()
+                    }
+                }
+            } catch {
+                DispatchQueue.main.async { [weak self] in
+                    guard let self else {
+                        return
+                    }
+                    self.colorProfileOperationInFlight = false
+                    self.showAlert(title: "颜色配置失败", message: error.localizedDescription)
+                }
+            }
         }
     }
 
@@ -2920,12 +3011,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSPopoverDelegate {
     }
 
     private func showAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = title
-        alert.informativeText = message.isEmpty ? "没有更多输出。" : message
-        alert.addButton(withTitle: "好")
-        alert.runModal()
+        presentAlert(
+            title: title,
+            message: message.isEmpty ? "没有更多输出。" : message,
+            primaryButton: "好"
+        )
+    }
+
+    private func presentAlert(
+        title: String,
+        message: String,
+        primaryButton: String,
+        secondaryButton: String? = nil,
+        completion: ((NSApplication.ModalResponse) -> Void)? = nil
+    ) {
+        guard alertPresentationInFlight == false else {
+            return
+        }
+        alertPresentationInFlight = true
+
+        if popover.isShown {
+            popover.performClose(nil)
+        }
+        stopPopoverEventMonitors()
+
+        // Present after the menu button's mouse event has fully unwound. Entering a
+        // modal loop from inside AppKit's gesture callback can leave the alert unable
+        // to receive its closing click.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                return
+            }
+
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = title
+            alert.informativeText = message
+            alert.addButton(withTitle: primaryButton)
+            if let secondaryButton {
+                alert.addButton(withTitle: secondaryButton)
+            }
+            alert.window.level = .floating
+
+            let response = alert.runModal()
+            self.alertPresentationInFlight = false
+            completion?(response)
+        }
     }
 
     private static func findProjectRoot() -> URL {
